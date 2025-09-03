@@ -171,7 +171,8 @@ class FrameProcessor:
             best = self.state.best_frame_info
             print("\nBest Frame Found:")
             print(f"  Frame Number: {best['frame_number']}")
-            print(f"  Phi Value: {best['phi']:.6f}°")
+            # print(f"  Phi Value: {best['phi']:.6f}°")
+            print(f"  Phi Value: {(best['phi'] + 90) if best['phi'] <= 180 else (best['phi'] - 90):.6f}°")
             print(f"  Distance Between Lines: {best['distance']:.2f} Pixels")
         else:
             print("\nNo Horizontal Parallel Lines Found In Analyzed Frames.")
