@@ -13,6 +13,7 @@ from dataclasses import dataclass, asdict
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
+from scipy.stats import linregress
 
 import cv2
 import imageio
@@ -59,7 +60,7 @@ class Config:
     line_min_angle: int = 80
     line_num_peaks: int = 10
     
-    horizontal_tolerance_degrees: float = 5.0
+    horizontal_tolerance_degrees: float = 15.0
     check_line_intersection: bool = True
     intersection_margin: int = 50
     
@@ -68,7 +69,7 @@ class Config:
     backup_edge_high_threshold: float = 0.7
     
     hull_min_area: int = 200
-    border_buffer: int = 2
+    border_buffer: int = 5
     
     video_fps: int = 10
     save_video: bool = False
@@ -198,8 +199,8 @@ class LineDetector:
             
             backup_lines = self._extract_lines_from_image(edge, threshold, 
                                                         min_distance, min_angle, num_peaks)
-            backup_lines = self._filter_border_lines(backup_lines, edge.shape, border_buffer)
-            return edge, ph, backup_lines
+            backup_lines_filt = self._filter_border_lines(backup_lines, edge.shape, border_buffer)
+            return edge, ph, backup_lines_filt
         
         return None, None, []
     
@@ -233,16 +234,27 @@ class LineDetector:
         filtered_lines = []
         
         for line_data in lines:
-            x_coords, y_coords = line_data[0], line_data[1]
-            is_border_line = (
-                np.any(x_coords <= border_buffer) or 
-                np.any(x_coords >= width - border_buffer) or
-                np.any(y_coords <= border_buffer) or 
-                np.any(y_coords >= height - border_buffer)
-            )
+            x_coords, y_coords, _, _ = line_data
+            l = linregress( x_coords, y_coords)
+            yi = l.intercept
+            # check the y intercept to find border line
+            if not np.isinf(yi) and abs(yi-height) <= border_buffer:
+                continue
+
+            # check the x intercept
+            l_inv = linregress( y_coords, x_coords)
+            xi = l_inv.intercept
+            if not np.isinf(xi) and (abs(xi-width) <= border_buffer):
+                continue
+            #is_border_line = (
+            #    np.any(x_coords <= border_buffer) or 
+            #    np.any(x_coords >= width - border_buffer) or
+            #    np.any(y_coords <= border_buffer) or 
+            #    np.any(y_coords >= height - border_buffer)
+            #)
             
-            if not is_border_line:
-                filtered_lines.append(line_data)
+            #if not is_border_line:
+            filtered_lines.append(line_data)
         
         return filtered_lines
 
@@ -336,25 +348,28 @@ class HorizontalLineDetector:
     
     def __init__(self, config: Config):
         self.config = config
+        self.config.edge_sigma = 40
         self.circle_detector = CircleDetector(config)
         self.line_detector = LineDetector(config)
         self.contour_processor = ContourProcessor(config)
     
     def detect_horizontal_lines(self, img: np.ndarray) -> Tuple[List[Dict], float, Dict]:
         """Detect horizontal lines and return line parameters, minimum distance, and processing info"""
+        # TODO separate edge finding and circle detection... 
         edge, circles = self.circle_detector.detect_circles(img)
         
         contour_coords, segments = self.contour_processor.extract_contour_coordinates(
-            edge, remove_border_points=True)
+            edge, remove_border_points=False)
         
-        if contour_coords is not None and segments is not None:
-            contour_img, ph, lines = self.line_detector.detect_lines(
-                contour_coords, img.shape, segments, backup_img=img)
-            detection_method = "Convex Hull"
-        else:
-            contour_img, ph, lines = self.line_detector.detect_lines(
+        #if contour_coords is not None and segments is not None:
+        #    contour_img, ph, lines = self.line_detector.detect_lines(
+        #        contour_coords, img.shape, segments, backup_img=img)
+        #    detection_method = "Convex Hull"
+        #else:
+        self.config
+        contour_img, ph, lines = self.line_detector.detect_lines(
                 None, img.shape, None, backup_img=img)
-            detection_method = "Direct Edge Detection"
+        detection_method = "Direct Edge Detection"
         
         horizontal_lines = self._extract_horizontal_line_params(lines, img.shape)
         min_distance = self._find_minimum_parallel_distance(horizontal_lines, img.shape)
@@ -377,18 +392,18 @@ class HorizontalLineDetector:
         horizontal_lines = []
         
         for line_data in lines:
-            if len(line_data) >= 4:
-                x_coords, y_coords, angle, distance = line_data[0], line_data[1], line_data[2], line_data[3]
+            #if len(line_data) >= 4:
+            #    x_coords, y_coords, angle, distance = line_data[0], line_data[1], line_data[2], line_data[3]
+            #else:
+            x_coords, y_coords = line_data[0], line_data[1]
+            if len(x_coords) > 1 and len(y_coords) > 1:
+                dx = x_coords[-1] - x_coords[0]
+                dy = y_coords[-1] - y_coords[0]
+                angle = np.arctan2(dy, dx)
+                x_center, y_center = img_shape[1]/2, img_shape[0]/2
+                distance = abs(np.mean(y_coords) - y_center)
             else:
-                x_coords, y_coords = line_data[0], line_data[1]
-                if len(x_coords) > 1 and len(y_coords) > 1:
-                    dx = x_coords[-1] - x_coords[0]
-                    dy = y_coords[-1] - y_coords[0]
-                    angle = np.arctan2(dy, dx)
-                    x_center, y_center = img_shape[1]/2, img_shape[0]/2
-                    distance = abs(np.mean(y_coords) - y_center)
-                else:
-                    continue
+                continue
             
             # Normalize angle to be between -pi/2 and pi/2
             normalized_angle = angle
@@ -399,7 +414,7 @@ class HorizontalLineDetector:
             
             # Check if line is approximately horizontal
             abs_angle = abs(normalized_angle)
-            if abs_angle <= horizontal_threshold or abs_angle >= (np.pi/2 - horizontal_threshold):
+            if abs_angle <= horizontal_threshold: #or abs_angle >= (np.pi/2 - horizontal_threshold):
                 y_intercept = np.mean(y_coords)
                 
                 horizontal_lines.append({

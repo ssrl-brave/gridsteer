@@ -4,7 +4,9 @@ Persistent Frame Processor - Handles frame iteration and calls non-persistent an
 """
 
 import subprocess
+import glob
 import sys
+import os
 import time
 import json
 from dataclasses import dataclass
@@ -14,13 +16,13 @@ from pathlib import Path
 @dataclass
 class PersistentConfig:
     """Configuration for persistent frame processing"""
-    data_path: str = "/qfs/projects/bioprep/data/automation/new_grid_center_db.2/"
+    data_path: str = "" 
     min_frame: int = 0
     max_frame: int = 99
     phi_min: float = 0
     phi_max: float = 360
     max_frames_to_process: int = 100
-    analyzer_script: str = "1_non_persistent_processor.py"
+    analyzer_script: str = os.path.join(os.path.dirname(__file__), "1_non_persistent_processor.py")
 
 
 @dataclass
@@ -53,6 +55,7 @@ class FrameProcessor:
     
     def __init__(self, config: PersistentConfig):
         self.config = config
+        
         self.analyzer_path = Path(config.analyzer_script)
         self.state = AnalyzerState()
         
@@ -104,6 +107,7 @@ class FrameProcessor:
         try:
             # Pass current state as JSON argument
             state_json = json.dumps(self.state.to_dict())
+            print(state_json)
             cmd = [
                 sys.executable, 
                 str(self.analyzer_path),
@@ -111,7 +115,7 @@ class FrameProcessor:
                 self.config.data_path,
                 '--state', state_json
             ]
-            
+            print(" ".join(cmd))
             result = subprocess.run(
                 cmd, 
                 capture_output=True, 
@@ -182,11 +186,17 @@ class FrameProcessor:
 
 def main():
     """Main entry point for persistent frame processor"""
+    data_path = sys.argv[1]
+    imgs_to_proc = int(sys.argv[2])
     config = PersistentConfig()
     
     # Override configuration defaults if needed
-    # config.data_path = "/path/to/your/data/"
-    # config.max_frames_to_process = 50
+    config.data_path = data_path
+    all_frames = glob.glob(f"{data_path}/*npz")
+    ntotal = len(all_frames)
+    config.max_frames_to_process = imgs_to_proc
+    config.min_frame=0
+    config.max_frame=ntotal
     
     processor = FrameProcessor(config)
     processor.process_frames()
