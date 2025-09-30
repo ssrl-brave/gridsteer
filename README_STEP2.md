@@ -28,7 +28,7 @@ Clustering Process:
 1. Group detected circles by Y-coordinate using DBSCAN
 2. Ensure exactly 2 rows with minimum separation (configurable through the Config class)
 3. Handle noise points by assigning to nearest row
-4. Apply phi-based row flipping when motor angle changes >90°
+4. Apply phi-based row flipping when motor angle changes >90° (i need to remove this)
 
 ## C. Well Labeling Strategy
 The system uses 5 sequential assignment methods for each detected well:
