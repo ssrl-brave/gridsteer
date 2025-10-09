@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gridsteer"
+version = "0.1"
+dependencies = [
+    "h5py",
+    "scipy",
+    "matplotlib",
+    "scikit-image",
+    "opencv-python",
+    "imageio",
+    "numpy",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["gridsteer*"]
+
+#[project.scripts]
+#"datsimx.sim" = "datsimx.mx_simulate:main"

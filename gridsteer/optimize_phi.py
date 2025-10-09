@@ -13,6 +13,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+from gridsteer import  optimize_phi_transient
+
+
 @dataclass
 class PersistentConfig:
     """Configuration for persistent frame processing"""
@@ -22,7 +25,7 @@ class PersistentConfig:
     phi_min: float = 0
     phi_max: float = 360
     max_frames_to_process: int = 100
-    analyzer_script: str = os.path.join(os.path.dirname(__file__), "1_non_persistent_processor.py")
+    analyzer_script: str = optimize_phi_transient.__file__
 
 
 @dataclass
@@ -186,15 +189,28 @@ class FrameProcessor:
 
 def main():
     """Main entry point for persistent frame processor"""
-    data_path = sys.argv[1]
-    imgs_to_proc = int(sys.argv[2])
+    from argparse import ArgumentParser
+    ap = ArgumentParser(
+        description="Optimize phi by looking at images in a specified data path."
+    )
+    ap.add_argument(
+        'data_path',
+        type=str,
+        help="The path to the input data directory"
+    )
+    ap.add_argument(
+        'imgs_to_proc',
+        type=int,
+        help="The maximum number of images to process (must be an integer)."
+    )
+    args = ap.parse_args()
     config = PersistentConfig()
     
     # Override configuration defaults if needed
-    config.data_path = data_path
-    all_frames = glob.glob(f"{data_path}/*npz")
+    config.data_path = args.data_path
+    all_frames = glob.glob(f"{args.data_path}/*npz")
     ntotal = len(all_frames)
-    config.max_frames_to_process = imgs_to_proc
+    config.max_frames_to_process = args.imgs_to_proc
     config.min_frame=0
     config.max_frame=ntotal
     
