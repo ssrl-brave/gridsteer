@@ -17,10 +17,10 @@ proc panSample_mm { horiz_mm vert_mm } {
 
 
 proc zigZagScan { dirname {n_passes 3}  {horiz_step 0.05} {vert_step 0.2} } {
-    # --- Define Constants (in mm) ---
+    # scans the sample in a zig zag pattern. Start this after align tip, with cursor
+    # at the tip of the grid, at the center, in a face-on view. 
+    # The sample will move such that the cursor travels towards the base along a zigzag.. 
     global BLnum
-    #global beamlineID
-    #set BLnum [regsub {BL|-} $beamlineID ""]
     send_operation_update "starting zigZag scan for BL=${BLnum}"
     variable sample_x
     variable sample_y
@@ -29,28 +29,26 @@ proc zigZagScan { dirname {n_passes 3}  {horiz_step 0.05} {vert_step 0.2} } {
 
     set count 0
     set pyExe "/home/blctl/miniforge/envs/blctl/bin/python"
+    # roughly the grid width
     set scan_height 2.5
-    
-    # --- 1. Initial Setup Move ---
-    # Move the sample UP by 1.2 mm to the top start position.
-    panSample_mm 0.0 -1.25
-    
-    # --- State Variables ---
     set vert_dir 1
     set horiz_dir -1
+    
+    # --- Initial Setup Move to upper corner from center---
+    panSample_mm 0.0 -1.25
         
     set horiz_incr [expr $horiz_dir * $horiz_step]
     
-    # --- 2. Main Loop: Iterate over the Z Passes ---
+    # Move up/down and towards base, switching vertical direction once scan_height is exceeded
     for {set i 0} {$i < $n_passes} {incr i} {
       
       set vert_incr [expr $vert_dir * $vert_step]
       set vert_moves [expr int($scan_height / $vert_step)]
       
-      # Loop through the required number of vertical steps
+      # loop through the vertical steps
       for {set j 0} {$j < $vert_moves} {incr j} {
           
-        # Pan the sample 
+        # Pan the sample: 
         panSample_mm $horiz_incr $vert_incr
 
         set pyCmd "$pyExe -m gridsteer.snapshot $BLnum $dirname $sample_x $sample_y $sample_z $gonio_phi 0 $count"
@@ -59,7 +57,7 @@ proc zigZagScan { dirname {n_passes 3}  {horiz_step 0.05} {vert_step 0.2} } {
         set count [expr $count+1]
       }
       
-      # Flip Direction for the next Z Pass
+      # Flip vertical direction
       set vert_dir [expr -$vert_dir]
     }
     
