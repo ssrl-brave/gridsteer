@@ -13,6 +13,8 @@ dependencies = [
     "opencv-python",
     "imageio",
     "numpy",
+    "rembg[cpu]",  # or "rembg[gpu]" for GPU acceleration
+    "Pillow",
 ]
 
 [tool.setuptools.packages.find]
