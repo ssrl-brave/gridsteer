@@ -1,10 +1,12 @@
 
-set $BLnum [regsub {BL|-} $beamlinID ""]
 
 proc optPhi_initialize { } {
-    puts "init optPhi"
+    global BLnum
+    variable beamlineID
+    set BLnum [regsub -all {BL|-} $beamlineID ""]
+    send_operation_update "init optPhi for beamline=$BLnum"
 }
-proc optPhi_start { dirname args } {
+proc optPhi_start { dirname {Grange 20} {Gstep 0.75} } {
     global BLnum
     set pyExe "/home/blctl/miniforge/envs/blctl/bin/python"
 
@@ -14,7 +16,7 @@ proc optPhi_start { dirname args } {
     variable sample_z
     variable gonio_phi
           
-    send_operation_update "sample x,y,z,phi: $sample_x, $sample_y, $sample_z, $gonio_phi"
+    send_operation_update "BL, sample x,y,z,phi: $BLnum, $sample_x, $sample_y, $sample_z, $gonio_phi"
 
     # log the current motor positions
     set start_x $sample_x
@@ -23,8 +25,6 @@ proc optPhi_start { dirname args } {
     set start_G $gonio_phi
     send_operation_update "Will write to dirname: $dirname"
     
-    set Grange [lindex $args 0]
-    set Gstep [lindex $args 1]
     set Glow [expr {$start_G - ($Grange / 2)}]
     set Ghigh [expr {$start_G + ($Grange / 2)}]
     send_operation_update "Will scan gonio phi from $Glow - $Ghigh with stepsize=$Gstep"

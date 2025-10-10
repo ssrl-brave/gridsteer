@@ -1,10 +1,10 @@
 
 
-set $BLnum [regsub {BL|-} $beamlinID ""]
-
 proc optCirc_initialize { } {
     global BLnum
-    puts "init optCirc  for beamline $BLnum"
+    variable beamlineID
+    set BLnum [regsub -all {BL|-} $beamlineID ""]
+    send_operation_update "init optCirc for bl $BLnum"
 }
 
 proc panSample_mm { horiz_mm vert_mm } {
@@ -19,6 +19,9 @@ proc panSample_mm { horiz_mm vert_mm } {
 proc zigZagScan { dirname {n_passes 3}  {horiz_step 0.05} {vert_step 0.2} } {
     # --- Define Constants (in mm) ---
     global BLnum
+    #global beamlineID
+    #set BLnum [regsub {BL|-} $beamlineID ""]
+    send_operation_update "starting zigZag scan for BL=${BLnum}"
     variable sample_x
     variable sample_y
     variable sample_z
@@ -47,7 +50,7 @@ proc zigZagScan { dirname {n_passes 3}  {horiz_step 0.05} {vert_step 0.2} } {
       # Loop through the required number of vertical steps
       for {set j 0} {$j < $vert_moves} {incr j} {
           
-        # Call the combined move helper. This is the core difference.
+        # Pan the sample 
         panSample_mm $horiz_incr $vert_incr
 
         set pyCmd "$pyExe -m gridsteer.snapshot $BLnum $dirname $sample_x $sample_y $sample_z $gonio_phi 0 $count"
@@ -64,7 +67,7 @@ proc zigZagScan { dirname {n_passes 3}  {horiz_step 0.05} {vert_step 0.2} } {
 }
 
 
-proc optCirc_start { dirname n_passes h_step v_step } {
+proc optCirc_start { dirname {n_passes 3}  {horiz_step 0.05} {vert_step 0.2} } {
     # access the current motor positions
     variable sample_x
     variable sample_y
@@ -80,7 +83,7 @@ proc optCirc_start { dirname n_passes h_step v_step } {
     set start_G $gonio_phi
     send_operation_update "Will write to dirname: $dirname"
 
-    zigZagScan $dirname $n_passes $h_step $v_step
+    zigZagScan $dirname $n_passes $horiz_step $vert_step
     
     ## reset the sample to starting position
     move sample_x to $start_x

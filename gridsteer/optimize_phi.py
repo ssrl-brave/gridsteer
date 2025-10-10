@@ -233,7 +233,7 @@ def parse_arguments():
     """Parse command line arguments"""
     parser = argparse.ArgumentParser(description='Persistent Frame Processor For Line Analysis')
     parser.add_argument('data_path', type=str, help='Path To Data Directory Containing .npz Files')
-    parser.add_argument('imgs_to_proc', type=int, help='Number Of Images To Process')
+    parser.add_argument('--imgs_to_proc', type=int, help='Number Of Images To Process', default=None)
     parser.add_argument('--verbose', '-v', action='store_true', help='Enable Verbose Logging Mode')
     parser.add_argument('--log-dir', type=str, default='logs', help='Directory For Log Files (Used With --verbose)')
     parser.add_argument('--output-dir', type=str, default='output_images_1', help='Directory For Output Visualization Images')
@@ -255,7 +255,7 @@ def main():
     # Determine frame range from available files
     all_frames = glob.glob(f"{args.data_path}/*npz")
     frames_total = len(all_frames)
-    config.max_frames_to_process = args.imgs_to_proc
+    config.max_frames_to_process = args.imgs_to_proc if args.imgs_to_proc is not None else frames_total
     config.min_frame = 0
     config.max_frame = frames_total
     
