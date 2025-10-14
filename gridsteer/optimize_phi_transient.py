@@ -636,96 +636,96 @@ class LineAnalyzer:
                                     horizontal_lines: List[Dict], processing_info: Dict, 
                                     line_pair: Optional[HorizontalLinePair],
                                     is_best_frame: bool = False, background_removed: bool = False):
-            """Save frame visualization with 2x3 subplot layout"""
-            fig, axes = plt.subplots(2, 3, figsize=(24, 12))
-            fig.suptitle(f'Frame {frame_number} Analysis (φ={motor_data.phi:.3f}°)', fontsize=16)
+        """Save frame visualization with 2x3 subplot layout"""
+        fig, axes = plt.subplots(2, 3, figsize=(24, 12))
+        fig.suptitle(f'Frame {frame_number} Analysis (φ={motor_data.phi:.3f}°)', fontsize=16)
+        
+        # Original image
+        axes[0, 0].imshow(original_img, cmap='gray')
+        axes[0, 0].set_title('Original Image')
+        axes[0, 0].axis('off')
+        
+        # Processed image
+        axes[0, 1].imshow(processed_img, cmap='gray')
+        axes[0, 1].set_title('Processed Image (After Background Removal)' if background_removed else 'Processed Image (No Background Removal)')
+        axes[0, 1].axis('off')
+        
+        # Mask visualization
+        mask = processing_info.get('mask')
+        if mask is not None:
+            axes[0, 2].imshow(mask, cmap='gray')
+            axes[0, 2].set_title('Background Removal Mask')
+        else:
+            axes[0, 2].imshow(processed_img, cmap='gray')
+            axes[0, 2].set_title('No Mask Available')
+        axes[0, 2].axis('off')
+        
+        # Outline visualization
+        axes[1, 0].imshow(processed_img, cmap='gray')
+        contour_coords = processing_info.get('contour_coords')
+        if contour_coords is not None:
+            axes[1, 0].scatter(contour_coords[:, 0], contour_coords[:, 1], c='red', s=10, alpha=0.7)
+            if len(contour_coords) > 2:
+                is_closed_contour = processing_info.get('is_closed_contour', True)
+                if is_closed_contour:
+                    closed_coords = np.vstack([contour_coords, contour_coords[0]])
+                    axes[1, 0].plot(closed_coords[:, 0], closed_coords[:, 1], 'red', linewidth=2, alpha=0.8)
+                else:
+                    axes[1, 0].plot(contour_coords[:, 0], contour_coords[:, 1], 'red', linewidth=2, alpha=0.8)
+        axes[1, 0].set_title(f'{processing_info.get("detection_method", "Unknown")}')
+        axes[1, 0].axis('off')
+        
+        # Processing visualization
+        edge_img = processing_info.get('contour_img')
+        if edge_img is not None:
+            axes[1, 1].imshow(edge_img, cmap='gray')
+            axes[1, 1].set_title('Detection Processing Image (After Border Filtering)')
+        else:
+            axes[1, 1].imshow(processed_img, cmap='gray')
+            axes[1, 1].set_title('No Processing Image Available')
+        axes[1, 1].axis('off')
+        
+        # Line detection results
+        axes[1, 2].imshow(processed_img, cmap='gray')
+        
+        all_lines_count = processing_info.get('all_horizontal_lines', 0)
+        if all_lines_count > len(horizontal_lines):
+            axes[1, 2].text(10, 30, f'Total Detected: {all_lines_count}, Showing: {len(horizontal_lines)} External', 
+                        color='white', fontweight='bold', bbox=dict(boxstyle="round,pad=0.3", facecolor="black", alpha=0.7))
+        
+        # Draw the detected lines
+        for i, line_info in enumerate(horizontal_lines):
+            x_coords = line_info.get('x_coords')
+            y_coords = line_info.get('y_coords')
+            y_intercept = line_info['y_intercept']
             
-            # Original image
-            axes[0, 0].imshow(original_img, cmap='gray')
-            axes[0, 0].set_title('Original Image')
-            axes[0, 0].axis('off')
+            color = 'lime' if i == 0 else 'red'
+            label = 'Top' if i == 0 else 'Bottom'
             
-            # Processed image
-            axes[0, 1].imshow(processed_img, cmap='gray')
-            axes[0, 1].set_title('Processed Image (After Background Removal)' if background_removed else 'Processed Image (No Background Removal)')
-            axes[0, 1].axis('off')
-            
-            # Mask visualization
-            mask = processing_info.get('mask')
-            if mask is not None:
-                axes[0, 2].imshow(mask, cmap='gray')
-                axes[0, 2].set_title('Background Removal Mask')
-            else:
-                axes[0, 2].imshow(processed_img, cmap='gray')
-                axes[0, 2].set_title('No Mask Available')
-            axes[0, 2].axis('off')
-            
-            # Outline visualization
-            axes[1, 0].imshow(processed_img, cmap='gray')
-            contour_coords = processing_info.get('contour_coords')
-            if contour_coords is not None:
-                axes[1, 0].scatter(contour_coords[:, 0], contour_coords[:, 1], c='red', s=10, alpha=0.7)
-                if len(contour_coords) > 2:
-                    is_closed_contour = processing_info.get('is_closed_contour', True)
-                    if is_closed_contour:
-                        closed_coords = np.vstack([contour_coords, contour_coords[0]])
-                        axes[1, 0].plot(closed_coords[:, 0], closed_coords[:, 1], 'red', linewidth=2, alpha=0.8)
-                    else:
-                        axes[1, 0].plot(contour_coords[:, 0], contour_coords[:, 1], 'red', linewidth=2, alpha=0.8)
-            axes[1, 0].set_title(f'{processing_info.get("detection_method", "Unknown")}')
-            axes[1, 0].axis('off')
-            
-            # Processing visualization
-            edge_img = processing_info.get('contour_img')
-            if edge_img is not None:
-                axes[1, 1].imshow(edge_img, cmap='gray')
-                axes[1, 1].set_title('Detection Processing Image (After Border Filtering)')
-            else:
-                axes[1, 1].imshow(processed_img, cmap='gray')
-                axes[1, 1].set_title('No Processing Image Available')
-            axes[1, 1].axis('off')
-            
-            # Line detection results
-            axes[1, 2].imshow(processed_img, cmap='gray')
-            
-            all_lines_count = processing_info.get('all_horizontal_lines', 0)
-            if all_lines_count > len(horizontal_lines):
-                axes[1, 2].text(10, 30, f'Total Detected: {all_lines_count}, Showing: {len(horizontal_lines)} External', 
-                            color='white', fontweight='bold', bbox=dict(boxstyle="round,pad=0.3", facecolor="black", alpha=0.7))
-            
-            # Draw the detected lines
-            for i, line_info in enumerate(horizontal_lines):
-                x_coords = line_info.get('x_coords')
-                y_coords = line_info.get('y_coords')
-                y_intercept = line_info['y_intercept']
-                
-                color = 'lime' if i == 0 else 'red'
-                label = 'Top' if i == 0 else 'Bottom'
-                
-                if x_coords is not None and y_coords is not None and len(x_coords) > 0 and len(y_coords) > 0:
-                    axes[1, 2].plot(x_coords, y_coords, color=color, linewidth=3, alpha=0.9, label=label)
-                    mid_idx = len(x_coords) // 2
-                    axes[1, 2].text(x_coords[mid_idx], y_coords[mid_idx] + 15, 
-                                f'{label}: y≈{y_intercept:.1f}px', 
-                                color='white', fontweight='bold', 
-                                bbox=dict(boxstyle="round,pad=0.3", facecolor=color, alpha=0.8))
-            
-            if line_pair:
-                mid_x = processed_img.shape[1] / 2
-                axes[1, 2].plot([mid_x, mid_x], [line_pair.line1_y, line_pair.line2_y], 
-                            'yellow', linewidth=4, alpha=0.9)
-                axes[1, 2].text(mid_x + 10, (line_pair.line1_y + line_pair.line2_y) / 2, 
-                            f'Distance:\n{line_pair.distance:.1f}px', color='yellow', fontweight='bold',
-                            bbox=dict(boxstyle="round,pad=0.3", facecolor="black", alpha=0.7))
-            
-            axes[1, 2].set_title(f'External Horizontal Lines (Showing: {len(horizontal_lines)} of {all_lines_count} Detected)')
-            axes[1, 2].axis('off')
-            
-            prefix = "CURRENT_BEST_" if is_best_frame else ""
-            frame_path = Path(self.config.output_images_dir) / f"{prefix}frame_{frame_number}.png"
-            plt.savefig(frame_path, dpi=100, bbox_inches='tight')
-            plt.close(fig)
-            logger.debug(f"Saved Visualization To {frame_path}")
+            if x_coords is not None and y_coords is not None and len(x_coords) > 0 and len(y_coords) > 0:
+                axes[1, 2].plot(x_coords, y_coords, color=color, linewidth=3, alpha=0.9, label=label)
+                mid_idx = len(x_coords) // 2
+                axes[1, 2].text(x_coords[mid_idx], y_coords[mid_idx] + 15, 
+                            f'{label}: y≈{y_intercept:.1f}px', 
+                            color='white', fontweight='bold', 
+                            bbox=dict(boxstyle="round,pad=0.3", facecolor=color, alpha=0.8))
+        
+        if line_pair:
+            mid_x = processed_img.shape[1] / 2
+            axes[1, 2].plot([mid_x, mid_x], [line_pair.line1_y, line_pair.line2_y], 
+                        'yellow', linewidth=4, alpha=0.9)
+            axes[1, 2].text(mid_x + 10, (line_pair.line1_y + line_pair.line2_y) / 2, 
+                        f'Distance:\n{line_pair.distance:.1f}px', color='yellow', fontweight='bold',
+                        bbox=dict(boxstyle="round,pad=0.3", facecolor="black", alpha=0.7))
+        
+        axes[1, 2].set_title(f'External Horizontal Lines (Showing: {len(horizontal_lines)} of {all_lines_count} Detected)')
+        axes[1, 2].axis('off')
+        
+        prefix = "CURRENT_BEST_" if is_best_frame else ""
+        frame_path = Path(self.config.output_images_dir) / f"{prefix}frame_{frame_number}.png"
+        plt.savefig(frame_path, dpi=100, bbox_inches='tight')
+        plt.close(fig)
+        logger.debug(f"Saved Visualization To {frame_path}")
 
 
 def setup_logging(config: Config):
