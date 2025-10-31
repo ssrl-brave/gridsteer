@@ -1,0 +1,12 @@
+numpy
+opencv-python
+scikit-image
+Pillow
+scikit-learn
+scipy
+matplotlib
+imageio
+
+# Optional:
+# rembg[cpu]
+# rembg[gpu]
