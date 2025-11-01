@@ -1,6 +1,6 @@
 """
 Well Detection Module
-Handles low-level image processing for circle and line detection
+Handles image processing for circle and line detection.
 """
 
 import cv2
@@ -9,7 +9,7 @@ import numpy as np
 from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from main import Config
+    from step2.main import Config
 
 from sklearn.linear_model import RANSACRegressor
 from sklearn.cluster import DBSCAN
@@ -32,13 +32,13 @@ logger = logging.getLogger(__name__)
 
 
 class CircleDetector:
-    """Handles circle detection using Hough transform"""
+    """Handles circle detection using Hough transform."""
 
     def __init__(self, config: "Config"):
         self.config = config
 
     def detect_circles(self, img: np.ndarray) -> Tuple:
-        """Detect circles using Hough transform"""
+        """Detect circles using Hough transform."""
         edge = canny(img, sigma=self.config.edge_sigma,
                     low_threshold=self.config.edge_low_threshold,
                     high_threshold=self.config.edge_high_threshold,
@@ -61,7 +61,7 @@ class CircleDetector:
 
 
 class LineDetector:
-    """Handles line detection using Hough transform"""
+    """Handles line detection using Hough transform."""
 
     def __init__(self, config: "Config"):
         self.config = config
@@ -69,7 +69,7 @@ class LineDetector:
     def detect_lines(self, contour_coords: Optional[np.ndarray], img_shape: Tuple,
                     segments: Optional[List] = None,
                     backup_img: Optional[np.ndarray] = None) -> Tuple:
-        """Detect lines using Hough transform"""
+        """Detect lines using Hough transform."""
         threshold = self.config.line_hough_threshold
         min_distance = self.config.line_min_distance
         min_angle = self.config.line_min_angle
@@ -79,7 +79,6 @@ class LineDetector:
         primary_lines = []
         contour_img = None
 
-        # Try hull/contour coordinates first
         if contour_coords is not None and len(contour_coords) > 0 and img_shape is not None:
             height, width = img_shape
             contour_img = np.zeros((height, width), dtype=np.uint8)
@@ -100,7 +99,6 @@ class LineDetector:
             if primary_lines:
                 return contour_img, primary_lines
 
-        # Fallback to direct edge detection
         if backup_img is not None:
             edge = canny(backup_img, sigma=self.config.backup_edge_sigma,
                         low_threshold=self.config.backup_edge_low_threshold,
@@ -116,7 +114,7 @@ class LineDetector:
 
     def _extract_lines_from_image(self, img: np.ndarray, threshold: int,
                                 min_distance: int, min_angle: int, num_peaks: int) -> List:
-        """Extract lines from image using Hough transform"""
+        """Extract lines from image using Hough transform."""
         angs = np.linspace(-np.pi/2, np.pi/2, 360, endpoint=False)
         h, theta, d = hough_line(img, angs)
         ph, pang, pdist = hough_line_peaks(h, theta, d, threshold=threshold,
@@ -139,14 +137,13 @@ class LineDetector:
         return lines
 
     def _filter_border_lines(self, lines: List, shape: Tuple[int, int], border_buffer: int) -> List:
-        """Filter out lines that run along image borders"""
+        """Filter out lines along image borders."""
         height, width = shape
         filtered_lines = []
 
         for line_data in lines:
             x_coords, y_coords = line_data
 
-            # Skip lines that run along borders
             if all(y <= border_buffer for y in y_coords):
                 continue
             if all(y >= height - border_buffer for y in y_coords):
@@ -162,7 +159,7 @@ class LineDetector:
 
 
 class ContourProcessor:
-    """Handles contour extraction and processing"""
+    """Handles contour extraction and processing."""
 
     def __init__(self, config: "Config"):
         self.config = config
@@ -170,7 +167,7 @@ class ContourProcessor:
     def extract_contour_coordinates(self, edge_image: np.ndarray, min_area: Optional[int] = None,
                                   remove_border_points: bool = True,
                                   border_buffer: Optional[int] = None) -> Tuple[Optional[np.ndarray], Optional[List]]:
-        """Extract and process contour coordinates from edge image"""
+        """Extract and process contour coordinates."""
         if min_area is None:
             min_area = self.config.hull_min_area
         if border_buffer is None:
@@ -218,7 +215,7 @@ class ContourProcessor:
         return filtered_hull_coords, segments
 
     def _create_segments_from_hull(self, hull_coords: np.ndarray, kept_indices: np.ndarray) -> List:
-        """Create contiguous segments from hull coordinates"""
+        """Create contiguous segments from hull coordinates."""
         segments = []
         if len(kept_indices) <= 1:
             return segments
@@ -246,7 +243,7 @@ class ContourProcessor:
 
 
 class ImageProcessor:
-    """Image processing utilities"""
+    """Image processing utilities."""
 
     def __init__(self, config: "Config"):
         self.config = config
@@ -270,7 +267,7 @@ class ImageProcessor:
                 logger.warning(f"Failed To Initialize Rembg Session: {e}")
 
     def remove_background(self, img: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        """Remove background from image using rembg"""
+        """Remove background from image using rembg."""
         if not REMBG_AVAILABLE or not PIL_AVAILABLE or not self.config.use_background_removal:
             mask = np.ones_like(img, dtype=np.uint8) * 255
             return img, mask
@@ -320,20 +317,20 @@ class ImageProcessor:
             return img, mask
 
     def generate_edge_image(self, img: np.ndarray) -> np.ndarray:
-        """Generate edge image using Canny edge detection"""
+        """Generate edge image using Canny edge detection."""
         return canny(img, sigma=self.config.edge_sigma,
                     low_threshold=self.config.edge_low_threshold,
                     high_threshold=self.config.edge_high_threshold,
                     use_quantiles=True)
 
     def find_circles(self, img: np.ndarray) -> Tuple:
-        """Detect circles using Hough transform"""
+        """Detect circles using Hough transform."""
         return self.circle_detector.detect_circles(img)
 
     def extract_contour_coordinates(self, edge_image: np.ndarray, min_area: Optional[int] = None,
                                    remove_border_points: bool = True,
                                    border_buffer: Optional[int] = None) -> Tuple[Optional[np.ndarray], Optional[List]]:
-        """Extract and process contour coordinates from edge image"""
+        """Extract and process contour coordinates."""
         if not self.config.enable_edge_detection or self.contour_processor is None:
             return None, None
         return self.contour_processor.extract_contour_coordinates(edge_image, min_area, remove_border_points, border_buffer)
@@ -341,18 +338,18 @@ class ImageProcessor:
     def find_lines(self, contour_coords: Optional[np.ndarray], img_shape: Tuple,
                   segments: Optional[List] = None,
                   backup_img: Optional[np.ndarray] = None) -> Tuple:
-        """Detect lines using Hough transform"""
+        """Detect lines using Hough transform."""
         if not self.config.enable_edge_detection or self.line_detector is None:
             return None, []
         return self.line_detector.detect_lines(contour_coords, img_shape, segments, backup_img)
 
 
 class GeometryUtils:
-    """Utility class for geometric operations"""
+    """Utility class for geometric operations."""
 
     @staticmethod
     def fit_line_ransac(points: np.ndarray, config: "Config") -> Tuple[float, float, np.ndarray]:
-        """Fit line using RANSAC"""
+        """Fit line using RANSAC."""
         if len(points) < 2:
             return 0, np.mean(points[:, 1]), np.ones(len(points), dtype=bool)
 
@@ -384,7 +381,7 @@ class GeometryUtils:
 
     @staticmethod
     def fit_line_median(x_coords: np.ndarray, y_coords: np.ndarray) -> Tuple[float, float]:
-        """Robust median-based line fitting"""
+        """Robust median-based line fitting."""
         if len(x_coords) < 2:
             return 0, np.mean(y_coords)
 
@@ -404,14 +401,14 @@ class GeometryUtils:
 
     @staticmethod
     def is_line_horizontal(slope: float, max_angle_degrees: float) -> bool:
-        """Check if a line is approximately horizontal"""
+        """Check if line is approximately horizontal."""
         max_angle_rad = np.deg2rad(max_angle_degrees)
         max_allowed_slope = np.tan(max_angle_rad)
         return abs(slope) <= max_allowed_slope
 
     @staticmethod
     def cluster_points_by_y(points: List[Tuple], y_tolerance: float, min_samples: int = 2) -> Dict[int, List[Tuple]]:
-        """Cluster points by y-coordinate using DBSCAN"""
+        """Cluster points by y-coordinate using DBSCAN."""
         if len(points) < min_samples:
             return {}
 

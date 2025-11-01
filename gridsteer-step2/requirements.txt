@@ -6,6 +6,7 @@ scikit-learn
 scipy
 matplotlib
 imageio
+imageio-ffmpeg
 
 # Optional:
 # rembg[cpu]

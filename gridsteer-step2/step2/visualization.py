@@ -1,6 +1,6 @@
 """
-Visualization module for Well Tracking System
-Contains all plotting and visualization functionality
+Visualization Module for Well Tracking System
+Contains all plotting and visualization functionality.
 """
 
 import matplotlib.pyplot as plt
@@ -9,19 +9,19 @@ from matplotlib.gridspec import GridSpec
 from matplotlib.lines import Line2D
 from typing import Dict, List, Optional, Tuple
 
-from well_tracking import format_well_label, well_id_to_row_col
+from step2.well_tracking import format_well_label, well_id_to_row_col
 
 
 class Visualizer:
-    """Visualization utilities for well tracking"""
-    
+    """Visualization utilities for well tracking."""
+
     def __init__(self, config):
         self.config = config
-    
+
     def add_well_tracking_visualization(self, ax, tracked_circles: Optional[Tuple],
                                        well_ids: Optional[List],
                                        well_tracker):
-        """Add well tracking visualization for two-row configuration"""
+        """Add well tracking visualization for two-row configuration."""
         if not well_tracker:
             return
 
@@ -81,11 +81,10 @@ class Visualizer:
     
     def create_visualization(self, frame_number: int, results: Dict,
                            motor_data, well_tracker, config, REMBG_AVAILABLE, PIL_AVAILABLE) -> plt.Figure:
-        """Create comprehensive debug visualization figure"""
+        """Create visualization figure."""
         fig = plt.figure(figsize=(28, 20))
         gs = GridSpec(3, 3, figure=fig, height_ratios=[1, 1, 1.5], hspace=0.3, wspace=0.2)
-        
-        # Create axes for debug frames
+
         axes = [
             fig.add_subplot(gs[0, 0]),  # Original
             fig.add_subplot(gs[0, 1]),  # Circle detection edge  
@@ -103,7 +102,7 @@ class Visualizer:
     
     def _create_debug_subplots(self, axes, results: Dict, motor_data, frame_number: int,
                                well_tracker, config, REMBG_AVAILABLE, PIL_AVAILABLE):
-        """Create all debug subplots"""
+        """Create all debug subplots."""
 
         axes[0].imshow(results['img'], cmap='gray', aspect='equal')
         axes[0].set_title('Original Image', fontsize=12, fontweight='bold')
@@ -196,7 +195,7 @@ class Visualizer:
                                           well_tracker, config, REMBG_AVAILABLE, PIL_AVAILABLE)
     
     def _draw_circle_detections_debug(self, ax, circles: Tuple):
-        """Draw detected circles with confidence information for debug view"""
+        """Draw detected circles with confidence information."""
         accum_values, cx, cy, radii = circles
         
         if len(accum_values) == 0:
@@ -232,10 +231,9 @@ class Visualizer:
     
     def _create_well_tracking_subplot(self, ax, results: Dict, motor_data, frame_number: int,
                                      well_tracker, config, REMBG_AVAILABLE, PIL_AVAILABLE):
-        """Create the main well tracking subplot"""
+        """Create main well tracking subplot."""
         ax.imshow(results['img'], cmap='gray')
-        
-        # Only show edge detection visualizations if edge condition is not satisfied yet
+
         edge_status = results.get('edge_detection_status', {})
         show_edge_detection = (
             config.enable_edge_detection and 
@@ -289,7 +287,7 @@ class Visualizer:
         ax.axis('off')
     
     def _draw_circle_detections(self, ax, circles: Tuple):
-        """Draw detected circles with confidence information"""
+        """Draw detected circles with confidence information."""
         accum_values, cx, cy, radii = circles
         first_circle = True
         
@@ -334,7 +332,7 @@ class Visualizer:
             first_circle = False
     
     def _draw_stagger_relationships(self, ax, well_tracker, config):
-        """Draw stagger relationship lines between rows"""
+        """Draw stagger relationship lines between rows."""
         if not well_tracker:
             return
             
@@ -359,7 +357,7 @@ class Visualizer:
                        'gray', alpha=0.3, linewidth=1, linestyle=':')
     
     def _get_well_tracking_legend_elements(self, results: Dict, config, REMBG_AVAILABLE, PIL_AVAILABLE) -> List[Line2D]:
-        """Get legend elements for well tracking"""
+        """Get legend elements for well tracking."""
         legend_elements = [
             Line2D([0], [0], marker='o', color='w', markerfacecolor='lime', 
                    markersize=10, lw=3, markeredgecolor='lime', label=f'Row 1 Wells (1,1)-(1,{config.total_wells_row1})'),
@@ -410,7 +408,7 @@ class Visualizer:
     
     def _generate_tracking_title(self, frame_number: int, motor_data, results: Dict,
                                 well_tracker, config, REMBG_AVAILABLE, PIL_AVAILABLE) -> str:
-        """Generate title for tracking subplot"""
+        """Generate title for tracking subplot."""
         title_parts = [
             f"Frame {frame_number}",
             f"φ={motor_data.phi:.1f}°",
@@ -486,7 +484,7 @@ class Visualizer:
         return " - ".join(title_parts)
 
     def _add_motor_position_box(self, ax, motor_data):
-        """Add motor position information"""
+        """Add motor position information."""
         motor_text = (f"Motor Positions\n"
                      f"X: {motor_data.x:.3f}\n"
                      f"Y: {motor_data.y:.3f}\n"
@@ -499,7 +497,7 @@ class Visualizer:
                          edgecolor='darkblue', linewidth=2))
 
     def _add_calibration_info_box(self, ax, results: Dict):
-        """Add motor calibration information"""
+        """Add motor calibration information."""
         calibration_info = results.get('motor_calibration_info', {})
         if not calibration_info:
             return
@@ -527,7 +525,7 @@ class Visualizer:
                 bbox=dict(boxstyle='round', facecolor=cal_color, alpha=0.6))
 
     def _add_motor_suggestion_box(self, ax, results: Dict, config):
-        """Add motor position suggestions"""
+        """Add motor position suggestions."""
         suggested_positions = results.get('suggested_motor_positions', {})
         if not suggested_positions or len(suggested_positions) == 0:
             return

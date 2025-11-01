@@ -3,7 +3,10 @@ Well Tracking System for Laboratory Image Analysis
 Main orchestration module
 """
 
+import argparse
+import glob
 import logging
+import math
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -11,10 +14,10 @@ from typing import Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-from well_tracking import WellTrackingSystem
+from step2.well_tracking import WellTrackingSystem
 
 def setup_logging(verbose_mode: bool, log_directory: str = "logs"):
-    """Configure logging based on verbose mode"""
+    """Configure logging based on verbose mode."""
     import warnings
     
     for handler in logger.handlers[:]:
@@ -54,7 +57,7 @@ def setup_logging(verbose_mode: bool, log_directory: str = "logs"):
 
 @dataclass
 class Config:
-    """Configuration parameters for the well tracking system"""
+    """Configuration parameters for well tracking system."""
     verbose_mode: bool = True
     log_directory: str = "logs"
 
@@ -79,8 +82,8 @@ class Config:
     total_wells_row2: int = 10
     total_wells: int = 19
 
-    row_y_tolerance: float = 40
-    row_separation_min: float = 150
+    row_y_tolerance: int = 40
+    row_separation_min: int = 150
     initial_row_layout_flipped: bool = False
 
     ransac_max_trials: int = 100
@@ -132,7 +135,7 @@ class Config:
     border_buffer: int = 2
 
     def get_radius_range(self) -> Tuple[int, int]:
-        """Get the minimum and maximum radius for circle detection"""
+        """Get minimum and maximum radius for circle detection."""
         if self.radius_min is not None and self.radius_max is not None:
             return self.radius_min, self.radius_max
         else:
@@ -140,9 +143,36 @@ class Config:
                     self.target_radius + self.radius_range)
 
 
+def parse_arguments():
+    """Parse command line arguments"""
+    parser = argparse.ArgumentParser(description='Persistent Frame Processor For Line Analysis')
+    parser.add_argument('data_path', type=str, help='Path To Data Directory Containing .npz Files')
+    parser.add_argument('--imgs_to_proc', type=int, help='Number Of Images To Process', default=None)
+    parser.add_argument('--target_radius', type=int, help='Target Radius For Circle Detection', default=85)
+    return parser.parse_args()
+
+
 def main():
-    """Main entry point with centralized configuration"""
+    """Main entry point."""
+    args = parse_arguments()
+
+    all_frames = glob.glob(f"{args.data_path}/*npz")
+    frames_total = len(all_frames)
+
     config = Config()
+    config.data_path = args.data_path
+    config.target_radius = args.target_radius
+    config.min_frame = 0
+    config.max_frame = frames_total
+
+    # Calculate distance values based on target radius
+    config.min_x_distance = round(1.5 * config.target_radius)
+    config.min_y_distance = round(1.5 * config.target_radius)
+    config.row_separation_min = round(1.5 * config.target_radius)
+    config.row_y_tolerance = math.floor(config.target_radius / 2)
+
+    config.max_frames_to_process = args.imgs_to_proc if args.imgs_to_proc is not None else frames_total
+
     system = WellTrackingSystem(config)
     system.run()
 

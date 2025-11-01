@@ -1,6 +1,6 @@
 """
 Well Tracking Module
-Handles well identification and tracking across frames
+Handles well identification and tracking across frames.
 """
 
 import json
@@ -11,13 +11,11 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from main import Config
+    from step2.main import Config
 
-# Import MotorPosition from motor_prediction
-from motor_prediction import MotorPosition
+from step2.motor_prediction import MotorPosition
 
-# Import detection classes from well_detection module
-from well_detection import (
+from step2.well_detection import (
     ImageProcessor,
     GeometryUtils,
     REMBG_AVAILABLE,
@@ -29,18 +27,18 @@ from scipy.spatial.distance import cdist
 logger = logging.getLogger(__name__)
 
 def calculate_angle_difference(phi1: float, phi2: float) -> float:
-    """Calculate minimum angle difference between two phi values"""
+    """Calculate minimum angle difference between two phi values."""
     diff = abs(phi1 - phi2)
     return min(diff, 360 - diff) if diff > 180 else diff
 
 
 def calculate_distance(p1: Tuple[float, float], p2: Tuple[float, float]) -> float:
-    """Calculate Euclidean distance between two points"""
+    """Calculate Euclidean distance between two points."""
     return np.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2)
 
 
 def well_id_to_row_col(well_id: int, config: "Config") -> Tuple[int, int]:
-    """Convert well ID to (row, column) format"""
+    """Convert well ID to (row, column)."""
     if well_id <= config.total_wells_row1:
         return (1, well_id)
     else:
@@ -48,7 +46,7 @@ def well_id_to_row_col(well_id: int, config: "Config") -> Tuple[int, int]:
 
 
 def row_col_to_well_id(row: int, col: int, config: "Config") -> int:
-    """Convert (row, column) to well ID"""
+    """Convert (row, column) to well ID."""
     if row == 1:
         return col
     else:
@@ -56,13 +54,13 @@ def row_col_to_well_id(row: int, col: int, config: "Config") -> int:
 
 
 def format_well_label(well_id: int, config: "Config") -> str:
-    """Format well ID as (row, column) string"""
+    """Format well ID as (row, column) string."""
     row, col = well_id_to_row_col(well_id, config)
     return f"({row},{col})"
 
 
 class WellCenterTracker:
-    """Tracks when each well is closest to the frame center"""
+    """Tracks when each well is closest to frame center."""
 
     def __init__(self, frame_shape: Optional[Tuple[int, int]] = None, config: Optional["Config"] = None):
         self.frame_shape = frame_shape
@@ -82,7 +80,7 @@ class WellCenterTracker:
         self.frame_center = (width / 2, height / 2)
 
     def update(self, frame_number: int, detected_wells: Dict, motor_data: MotorPosition):
-        """Update tracking with new frame data"""
+        """Update tracking with new frame data."""
         if not self.frame_center:
             return
 
@@ -112,7 +110,7 @@ class WellCenterTracker:
 
 
     def _estimate_missing_well_offsets(self, well_tracker: Optional['WellTracker']):
-        """Estimate pixel offsets for undetected wells using geometric layout"""
+        """Estimate pixel offsets for undetected wells."""
         if not well_tracker or not well_tracker.established_spacing:
             return
 
@@ -155,7 +153,7 @@ class WellCenterTracker:
     
     def save_to_json(self, filename: Optional[str] = None, motor_calibration: Optional['InverseMotorCalibration'] = None,
                      well_tracker: Optional['WellTracker'] = None) -> str:
-        """Save predicted motor positions for centering all wells"""
+        """Save predicted motor positions for centering wells."""
         if filename is None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"well_centering_positions_{timestamp}.json"
@@ -196,10 +194,8 @@ class WellCenterTracker:
                     logger.warning(f"No Pixel Offset Available For Well {format_well_label(well_id, self.config)}")
                     continue
 
-                # Get the pixel offset (delta from well position to center) from reference frame
                 pixel_delta = np.array(self.pixel_offsets_to_center[well_id])
 
-                # Predict motor shift using calibrated model
                 motor_shift = motor_calibration.predict_motor_shifts(pixel_delta)
 
                 if motor_shift is None:
@@ -207,12 +203,11 @@ class WellCenterTracker:
                     logger.warning(f"Could Not Predict Motor Shift For Well {format_well_label(well_id, self.config)}")
                     continue
 
-                # Add predicted shift to reference motor position
                 predicted_motor = MotorPosition(
                     x=self.reference_motor.x + motor_shift[0],
                     y=self.reference_motor.y + motor_shift[1],
-                    z=self.reference_motor.z + motor_shift[2],  # Add Z shift
-                    phi=self.reference_motor.phi  # Phi constant
+                    z=self.reference_motor.z + motor_shift[2],
+                    phi=self.reference_motor.phi
                 )
 
                 row, col = well_id_to_row_col(well_id, self.config)
@@ -260,14 +255,14 @@ class WellCenterTracker:
 
 
 class WellIdentifier:
-    """Handles well identification logic for staggered layout"""
-    
+    """Handles well identification logic for staggered layout."""
+
     def __init__(self, config: "Config"):
         self.config = config
-    
-    def identify_well_using_stagger(self, x: float, y: float, row_id: int, 
+
+    def identify_well_using_stagger(self, x: float, y: float, row_id: int,
                                    other_row_wells: Dict[int, Dict], spacing: float) -> Optional[int]:
-        """Identify well ID using staggered layout relationship"""
+        """Identify well ID using staggered layout."""
         if not other_row_wells or not spacing:
             return None
         
@@ -337,9 +332,9 @@ class WellIdentifier:
         
         return best_id
     
-    def determine_well_id_from_spacing(self, x: float, y: float, row_id: int, 
+    def determine_well_id_from_spacing(self, x: float, y: float, row_id: int,
                                      reference_wells: Dict[int, Dict], spacing: float) -> Optional[int]:
-        """Determine well ID based on spacing from reference wells"""
+        """Determine well ID based on spacing from reference wells."""
         if not reference_wells or not spacing:
             return None
         
@@ -389,12 +384,12 @@ class WellIdentifier:
 
 
 class WellTrackingSystem:
-    """Main system for well tracking with shift-based motor calibration"""
+    """Main system for well tracking with motor calibration."""
 
     def __init__(self, config: "Config"):
-        from main import setup_logging
-        from motor_prediction import InverseMotorCalibration
-        from visualization import Visualizer
+        from step2.main import setup_logging
+        from step2.motor_prediction import InverseMotorCalibration
+        from step2.visualization import Visualizer
 
         self.config = config
 
@@ -439,7 +434,7 @@ class WellTrackingSystem:
         logger.info("="*80)
 
     def load_frame_data(self, frame_number: int) -> Tuple[Optional[MotorPosition], Optional[np.ndarray]]:
-        """Load frame data from .npz files"""
+        """Load frame data from .npz files."""
         try:
             data = np.load(f"{self.config.data_path}test{frame_number}.npz")
             motor_pos = MotorPosition(
@@ -454,7 +449,7 @@ class WellTrackingSystem:
 
     def process_frame_detection(self, frame_number: int, img: np.ndarray,
                                motor_data: MotorPosition) -> Dict:
-        """Process frame for detection"""
+        """Process frame for detection."""
         if self.well_center_tracker and self.well_center_tracker.frame_shape is None:
             self.well_center_tracker.set_frame_shape(img.shape)
 
@@ -511,7 +506,7 @@ class WellTrackingSystem:
 
     def update_tracking(self, frame_number: int, detection_results: Dict,
                        motor_data: MotorPosition) -> Dict:
-        """Update tracking based on detection results"""
+        """Update tracking based on detection results."""
         tracking_results = {
             'tracked_circles': None,
             'well_ids': None,
@@ -573,14 +568,14 @@ class WellTrackingSystem:
 
     def create_visualization(self, frame_number: int, results: Dict,
                            motor_data: MotorPosition):
-        """Create comprehensive debug visualization figure"""
+        """Create visualization figure."""
         return self.visualizer.create_visualization(
             frame_number, results, motor_data, self.well_tracker,
             self.config, REMBG_AVAILABLE, PIL_AVAILABLE
         )
 
     def run(self):
-        """Main processing loop"""
+        """Main processing loop."""
         import imageio
         import matplotlib.pyplot as plt
 
@@ -694,7 +689,7 @@ class WellTrackingSystem:
             self._print_final_summary()
 
     def _print_final_summary(self):
-        """Print final processing summary"""
+        """Print final processing summary."""
         logger.info(f"Processing Complete:")
         logger.info(f"  Frames Processed: {self.frames_processed}")
         logger.info(f"  Frames Skipped: {self.frames_skipped}")
@@ -705,7 +700,7 @@ class WellTrackingSystem:
             self._print_calibration_models()
 
     def _print_calibration_models(self):
-        """Print calibration model information"""
+        """Print calibration model information."""
         cal = self.motor_calibration
 
         logger.info("="*80)
@@ -759,7 +754,7 @@ class WellTrackingSystem:
 
 
 class WellTracker:
-    """Adaptive well tracking for two-row configuration"""
+    """Adaptive well tracking for two-row configuration."""
 
     def __init__(self, config: "Config"):
         self.config = config
@@ -800,7 +795,7 @@ class WellTracker:
         self.well_center_tracker = None
     
     def _check_and_handle_phi_flip(self, current_phi: float) -> bool:
-        """Check if phi has changed by >90° and handle row flipping"""
+        """Check if phi has changed by >90° and handle row flipping."""
         flip_occurred = False
         
         if self.last_perpendicular_phi is not None:
@@ -826,8 +821,7 @@ class WellTracker:
                 logger.info(f"  Row Layout Now: {'Flipped' if self.row_layout_flipped else 'Normal'}")
                 layout_desc = "Row 2 Top, Row 1 Bottom" if self.row_layout_flipped else "Row 1 Top, Row 2 Bottom"
                 logger.info(f"  Current Layout: {layout_desc}")
-                
-                # Clear established knowledge since layout changed
+
                 self.established_spacing = None
                 self.reference_frame_wells = {}
                 self.reference_frame_number = None
@@ -841,7 +835,7 @@ class WellTracker:
         return flip_occurred
     
     def _check_edge_condition(self, detections: List[Tuple], lines: List) -> Tuple[bool, Optional[Dict]]:
-        """Check if any circle is at the edge of a row (near a non-horizontal line)"""
+        """Check if circle is at edge of row."""
         if not self.config.enable_edge_detection or not lines or not detections:
             return False, None
         
@@ -879,16 +873,12 @@ class WellTracker:
         return False, None
     
     def _assign_to_established_rows(self, detections: List[Tuple]) -> Dict[int, List[Tuple]]:
-        """Assign detections to established rows based on y-coordinate proximity
-        NEW METHOD: Used after rows are established to avoid DBSCAN clustering
-        ADAPTIVE: Uses current line parameters which update each frame to track shifting rows"""
+        """Assign detections to established rows based on y-coordinate proximity."""
         if not self.row_params:
             return {}
         
         rows = {1: [], 2: []}
-        
-        # Get reference y-positions for each row
-        # These are updated every frame, so they track shifting row positions
+
         row_y_positions = {}
         
         for row_id in [1, 2]:
@@ -948,21 +938,18 @@ class WellTracker:
         return {k: v for k, v in rows.items() if v}
     
     def _detect_rows(self, detections: List[Tuple], current_phi: float = None) -> Dict[int, List[Tuple]]:
-        """Detect and cluster detections into two rows with phi-based row flipping
-        MODIFIED: Uses closest-row assignment after rows are established"""
+        """Detect and cluster detections into two rows with phi-based row flipping."""
         if len(detections) < 1:
             return {}
         
         if current_phi is not None:
             self._check_and_handle_phi_flip(current_phi)
         
-        # If rows are already established, assign to closest row
         if self.rows_established and len(self.row_params) >= 1:
-            logger.debug(f"Frame {self.frame_number}: Using established row assignment (no DBSCAN)")
+            logger.debug(f"Frame {self.frame_number}: Using Established Row Assignment")
             return self._assign_to_established_rows(detections)
-        
-        # Otherwise use DBSCAN clustering (original logic for initial establishment)
-        logger.debug(f"Frame {self.frame_number}: Using DBSCAN clustering for row detection")
+
+        logger.debug(f"Frame {self.frame_number}: Using DBSCAN Clustering For Row Detection")
         
         if len(detections) < 2:
             # Not enough detections to cluster

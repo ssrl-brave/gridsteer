@@ -1,5 +1,5 @@
 """
-Test Predictions - Find and Save Frames Closest to Predicted Motor Positions
+Test Predictions - Find and Save Frames Closest to Predicted Motor Positions.
 """
 
 import json
@@ -11,7 +11,7 @@ import argparse
 
 
 def load_frame_data(data_path: str, frame_number: int) -> Optional[Tuple[Dict, np.ndarray]]:
-    """Load frame data from .npz file"""
+    """Load frame data from .npz file."""
     try:
         data = np.load(f"{data_path}test{frame_number}.npz")
         motor_pos = {
@@ -26,7 +26,7 @@ def load_frame_data(data_path: str, frame_number: int) -> Optional[Tuple[Dict, n
 
 
 def calculate_motor_distance(pos1: Dict, pos2: Dict, use_z: bool = True, use_phi: bool = True) -> float:
-    """Calculate Euclidean distance between two motor positions"""
+    """Calculate Euclidean distance between two motor positions."""
     dx = pos1['x'] - pos2['x']
     dy = pos1['y'] - pos2['y']
     dist_sq = dx**2 + dy**2
@@ -37,7 +37,6 @@ def calculate_motor_distance(pos1: Dict, pos2: Dict, use_z: bool = True, use_phi
 
     if use_phi:
         dphi = pos1['phi'] - pos2['phi']
-        # Handle phi wraparound
         if abs(dphi) > 180:
             dphi = 360 - abs(dphi)
         dist_sq += dphi**2
@@ -47,7 +46,7 @@ def calculate_motor_distance(pos1: Dict, pos2: Dict, use_z: bool = True, use_phi
 
 def find_closest_frames(json_path: str, data_path: str, min_frame: int, max_frame: int,
                        use_z: bool = True, use_phi: bool = True) -> Dict:
-    """Find the frame closest to each predicted motor position"""
+    """Find frame closest to each predicted motor position."""
     with open(json_path, 'r') as f:
         predictions = json.load(f)
 
@@ -103,7 +102,7 @@ def find_closest_frames(json_path: str, data_path: str, min_frame: int, max_fram
 
 
 def save_closest_frames(results: Dict, output_dir: str):
-    """Save the closest frames for each well"""
+    """Save closest frames for each well."""
     output_path = Path(output_dir)
     output_path.mkdir(exist_ok=True)
 

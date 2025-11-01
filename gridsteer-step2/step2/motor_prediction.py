@@ -1,6 +1,6 @@
 """
 Motor Prediction and Calibration Module
-Handles motor position prediction and calibration using shift-based learning
+Handles motor position prediction and calibration.
 """
 
 import logging
@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Dict, Optional, Tuple, Set, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from main import Config
+    from step2.main import Config
 from sklearn.linear_model import Ridge
 from sklearn.preprocessing import PolynomialFeatures
 from scipy.interpolate import RBFInterpolator
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class MotorPosition:
-    """Motor position data"""
+    """Motor position data."""
     x: float
     y: float
     z: float
@@ -28,7 +28,7 @@ class MotorPosition:
 
 @dataclass
 class FrameObservation:
-    """Single frame observation for calibration"""
+    """Single frame observation for calibration."""
     frame_number: int
     motor_position: np.ndarray
     pixel_positions: Dict[int, np.ndarray]
@@ -36,8 +36,8 @@ class FrameObservation:
 
 
 class InverseMotorCalibration:
-    """Learns inverse transformation from pixel coordinates to motor coordinates using shift-based prediction.
-    Predicts X, Y, and Z motor shifts while phi remains constant."""
+    """Learns inverse transformation from pixel to motor coordinates.
+    Predicts X, Y, Z motor shifts while phi remains constant."""
 
     def __init__(self, config: "Config"):
         self.config = config
@@ -88,7 +88,7 @@ class InverseMotorCalibration:
     
     def add_observation(self, motor_data: MotorPosition, detected_wells: Dict[int, Dict],
                        frame_number: int):
-        """Add a new observation of motor positions and corresponding pixel positions"""
+        """Add observation of motor and pixel positions."""
         if not detected_wells:
             return
 
@@ -117,7 +117,7 @@ class InverseMotorCalibration:
             self._train_models()
     
     def _generate_training_pairs_averaged(self):
-        """Generate training pairs using average movement across all wells"""
+        """Generate training pairs using average movement across wells."""
         if len(self.frame_observations) < 2:
             return
         
@@ -166,7 +166,7 @@ class InverseMotorCalibration:
                 self._update_training_statistics(frame1, frame2, len(common_wells), std_pixel_delta)
     
     def _generate_training_pairs_individual(self):
-        """Generate training pairs from individual well movements"""
+        """Generate training pairs from individual well movements."""
         if len(self.frame_observations) < 2:
             return
         
@@ -195,9 +195,9 @@ class InverseMotorCalibration:
 
                     self._update_training_statistics(frame1, frame2, 1, np.array([0, 0]))
     
-    def _update_training_statistics(self, frame1: int, frame2: int, 
+    def _update_training_statistics(self, frame1: int, frame2: int,
                                    num_common_wells: int, std_pixel_delta: np.ndarray):
-        """Update training statistics"""
+        """Update training statistics."""
         frame_gap = abs(frame2 - frame1)
         
         self.training_stats['total_pairs_generated'] += 1
@@ -220,7 +220,7 @@ class InverseMotorCalibration:
             self.training_stats['average_common_wells'] = np.mean(list(self.common_wells_history))
     
     def _train_models(self):
-        """Train regression models to predict motor shifts from pixel shifts"""
+        """Train regression models to predict motor shifts."""
         if len(self.pixel_shifts) < self.min_samples:
             return
 
@@ -245,7 +245,6 @@ class InverseMotorCalibration:
                     kernel='thin_plate_spline'
                 )
 
-                # Calculate R² scores for spline models
                 predictions_x = self.model_motor_x(X)
                 predictions_y = self.model_motor_y(X)
                 predictions_z = self.model_motor_z(X)
@@ -279,7 +278,7 @@ class InverseMotorCalibration:
         self.is_calibrated = True
     
     def predict_motor_shifts(self, pixel_delta: np.ndarray) -> Optional[np.ndarray]:
-        """Predict motor shifts for X, Y, and Z based on pixel movement"""
+        """Predict motor shifts for X, Y, Z based on pixel movement."""
         if not self.is_calibrated:
             return None
 
@@ -289,7 +288,6 @@ class InverseMotorCalibration:
         X = pixel_delta.reshape(1, -1)
 
         if self.calibration_method == "spline":
-            # Use RBF interpolator (returns scalar or array)
             motor_dx = float(self.model_motor_x(X)[0]) if hasattr(self.model_motor_x(X), '__len__') else float(self.model_motor_x(X))
             motor_dy = float(self.model_motor_y(X)[0]) if hasattr(self.model_motor_y(X), '__len__') else float(self.model_motor_y(X))
             motor_dz = float(self.model_motor_z(X)[0]) if hasattr(self.model_motor_z(X), '__len__') else float(self.model_motor_z(X))
@@ -307,7 +305,7 @@ class InverseMotorCalibration:
     def predict_motor_position_for_pixel_shift(self, current_motor: MotorPosition,
                                               current_pixel: Tuple[float, float],
                                               target_pixel: Tuple[float, float]) -> Optional[MotorPosition]:
-        """Predict motor position by adding predicted shifts to current position"""
+        """Predict motor position for pixel shift."""
         if not self.is_calibrated:
             return None
 
@@ -330,13 +328,13 @@ class InverseMotorCalibration:
     def estimate_motor_for_well_centering(self, current_motor: MotorPosition,
                                          well_pixel_position: Tuple[float, float],
                                          frame_center: Tuple[float, float]) -> Optional[MotorPosition]:
-        """Estimate motor position to center a well"""
+        """Estimate motor position to center a well."""
         return self.predict_motor_position_for_pixel_shift(
             current_motor, well_pixel_position, frame_center
         )
-    
+
     def get_calibration_info(self) -> Dict:
-        """Get calibration status and quality metrics"""
+        """Get calibration status and quality metrics."""
         if not self.is_calibrated:
             return {
                 'is_calibrated': False,
@@ -352,7 +350,6 @@ class InverseMotorCalibration:
         
         avg_score = np.mean(list(self.calibration_scores.values()))
 
-        # Build method description
         if self.calibration_method == "spline":
             method_desc = f'Spline (RBF, smoothing={self.spline_smoothing})'
         elif self.calibration_method == "polynomial":
