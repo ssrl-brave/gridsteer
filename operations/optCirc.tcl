@@ -2,9 +2,12 @@
 
 proc optCirc_initialize { } {
     global BLnum
+	global pyExe
     variable beamlineID
     set BLnum [regsub -all {BL|-} $beamlineID ""]
     send_operation_update "init optCirc for bl $BLnum"
+    set pyExe "/home/blctl/miniforge/envs/blctl/bin/python"
+
 }
 
 proc panSample_mm { horiz_mm vert_mm } {
@@ -21,6 +24,7 @@ proc zigZagScan { dirname {n_passes 3}  {horiz_step 0.05} {vert_step 0.2} } {
     # at the tip of the grid, at the center, in a face-on view. 
     # The sample will move such that the cursor travels towards the base along a zigzag.. 
     global BLnum
+    global pyExe
     send_operation_update "starting zigZag scan for BL=${BLnum}"
     variable sample_x
     variable sample_y
@@ -28,7 +32,6 @@ proc zigZagScan { dirname {n_passes 3}  {horiz_step 0.05} {vert_step 0.2} } {
     variable gonio_phi
 
     set count 0
-    set pyExe "/home/blctl/miniforge/envs/blctl/bin/python"
     # roughly the grid width
     set scan_height 2.5
     set vert_dir 1
@@ -46,6 +49,8 @@ proc zigZagScan { dirname {n_passes 3}  {horiz_step 0.05} {vert_step 0.2} } {
       set vert_moves [expr int($scan_height / $vert_step)]
       
       # loop through the vertical steps
+	  set pass_id [expr $i+1]
+	  send_operation_update "Pass $pass_id / $n_passes"
       for {set j 0} {$j < $vert_moves} {incr j} {
           
         # Pan the sample: 
@@ -53,7 +58,7 @@ proc zigZagScan { dirname {n_passes 3}  {horiz_step 0.05} {vert_step 0.2} } {
 
         set pyCmd "$pyExe -m gridsteer.snapshot $BLnum $dirname $sample_x $sample_y $sample_z $gonio_phi 0 $count"
         set pyOut [eval exec $pyCmd]
-        send_operation_update "got python output: =$pyOut"
+        #send_operation_update "got python output: =$pyOut"
         set count [expr $count+1]
       }
       
@@ -71,15 +76,17 @@ proc optCirc_start { dirname {n_passes 3}  {horiz_step 0.05} {vert_step 0.2} } {
     variable sample_y
     variable sample_z
     variable gonio_phi
+    global pyExe
           
     send_operation_update "sample x,y,z,phi: $sample_x, $sample_y, $sample_z, $gonio_phi"
+    send_operation_update "python executable: $pyExe"
+    send_operation_update "Will write to dirname: $dirname"
 
     # log the current motor positions
     set start_x $sample_x
     set start_y $sample_y
     set start_z $sample_z
     set start_G $gonio_phi
-    send_operation_update "Will write to dirname: $dirname"
 
     zigZagScan $dirname $n_passes $horiz_step $vert_step
     
@@ -90,7 +97,12 @@ proc optCirc_start { dirname {n_passes 3}  {horiz_step 0.05} {vert_step 0.2} } {
     move gonio_phi to $start_G
     wait_for_devices sample_x sample_y sample_z gonio_phi
 
+	# Call the circle map optimizer
+	send_operation_update "Running the optimizer to map out circular wells in the grid ... "
+    set pyCmd "$pyExe -m gridsteer.step2.main $dirname --target_radius 85 --outdir $dirname"
+	send_operation_update "pyCmd: $pyCmd"
+    set pyOut [eval exec $pyCmd]
+
     return OK
 }
-
 
