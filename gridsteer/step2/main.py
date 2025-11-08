@@ -71,7 +71,7 @@ class Config:
     target_radius: int = 85
     radius_min: Optional[int] = None
     radius_max: Optional[int] = None
-    radius_range: int = 5
+    radius_range: int = 5  # 5
     min_x_distance: int = 150
     min_y_distance: int = 150
     hough_num_peaks: int = 19
@@ -107,8 +107,8 @@ class Config:
     rembg_model: Optional[str] = "birefnet-general-lite"
 
     video_fps: int = 10
-    save_video: bool = False
-    save_individual_frames: bool = True
+    save_video: bool = False  # True
+    save_individual_frames: bool = False  # True
     save_json_output: bool = True
     display_frames: bool = False
 
