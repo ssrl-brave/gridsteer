@@ -607,12 +607,10 @@ class WellTrackingSystem:
             writer = imageio.get_writer(video_path, fps=self.config.video_fps)
             logger.info(f"Recording Video To: {video_path}")
 
-        forward_sequence = list(range(self.config.min_frame, self.config.max_frame + 1))
-        reverse_sequence = list(range(self.config.max_frame - 1, self.config.min_frame - 1, -1))
-        frame_sequence = [(f, False) for f in forward_sequence] + [(f, True) for f in reverse_sequence]
+        frame_sequence = list(range(self.config.min_frame, self.config.max_frame + 1))
         total_frames_to_process = len(frame_sequence)
 
-        logger.info(f"Processing {total_frames_to_process} Frames (Including Reverse Sequence)")
+        logger.info(f"Processing {total_frames_to_process} Frames")
 
         initial_layout = "Row 2 Top, Row 1 Bottom" if self.config.initial_row_layout_flipped else "Row 1 Top, Row 2 Bottom"
         logger.info(f"Initial Row Layout: {initial_layout}")
@@ -623,7 +621,7 @@ class WellTrackingSystem:
             logger.info(f"Edge Detection Disabled")
 
         try:
-            for frame_index, (frame_number, is_reverse) in enumerate(frame_sequence, 1):
+            for frame_index, frame_number in enumerate(frame_sequence, 1):
                 print(frame_index)
                 if self.config.display_frames:
                     if use_ipython:
@@ -666,12 +664,10 @@ class WellTrackingSystem:
                     logger.info(f"Progress: {progress_pct:.1f}% - Frame {frame_number} - φ={motor_data.phi:.1f}°{edge_msg}{rows_msg}")
 
                 fig = self.create_visualization(frame_number, results, motor_data)
-                direction_label = " (Reverse)" if is_reverse else ""
-                fig.suptitle(f"Frame {frame_number}{direction_label}", fontsize=16, y=0.99)
+                fig.suptitle(f"Frame {frame_number}", fontsize=16, y=0.99)
 
                 if self.config.save_individual_frames:
-                    reverse_suffix = "_reverse" if is_reverse else ""
-                    frame_path = Path(self.config.output_images_dir) / f"frame_{frame_number}{reverse_suffix}.png"
+                    frame_path = Path(self.config.output_images_dir) / f"frame_{frame_number}.png"
                     plt.savefig(frame_path, dpi=150, bbox_inches='tight')
 
                 if writer:

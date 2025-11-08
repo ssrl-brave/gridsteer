@@ -127,6 +127,9 @@ class Config:
     calibration_alpha: float = 1.0
     calibration_spline_smoothing: float = 0.5
 
+    # Outlier detection settings
+    calibration_outlier_detection: str = "iqr"  # "none" or "iqr" (Tukey's method)
+
     edge_sigma: float = 10.0
     edge_low_threshold: float = 0.15
     edge_high_threshold: float = 0.7
@@ -179,8 +182,11 @@ def main():
     print("Frames total=%d" % frames_total)
 
     config = Config()
-    config.output_root = args.outdir
-    os.makedirs(args.outdir, exist_ok=True)
+    if args.outdir is not None:
+        config.output_root = args.outdir
+        os.makedirs(args.outdir, exist_ok=True)
+    else:
+        os.makedirs(config.output_root, exist_ok=True)
     config.data_path = args.data_path
     config.target_radius = args.target_radius
     config.min_frame = 0
