@@ -71,7 +71,7 @@ class Config:
     target_radius: int = 85
     radius_min: Optional[int] = None
     radius_max: Optional[int] = None
-    radius_range: int = 5  # 5
+    radius_range: int = 10  # 5
     min_x_distance: int = 150
     min_y_distance: int = 150
     hough_num_peaks: int = 19
