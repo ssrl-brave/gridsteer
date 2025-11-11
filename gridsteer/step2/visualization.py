@@ -25,16 +25,31 @@ class Visualizer:
         if not well_tracker:
             return
 
-        line_endpoints = well_tracker.get_line_endpoints()
-        if line_endpoints:
-            for i, endpoints in enumerate(line_endpoints):
-                if endpoints:
-                    (x1, y1), (x2, y2) = endpoints
-                    color = 'yellow' if i == 0 else 'cyan'
-                    label = f'Row {i+1} Line'
-                    ax.plot([x1, x2], [y1, y2],
-                           color, linewidth=3, alpha=0.5, linestyle='--',
-                           label=label)
+        lines_info = well_tracker.get_line_endpoints()
+        if lines_info:
+            for line_info in lines_info:
+                (x1, y1), (x2, y2) = line_info['endpoints']
+                row_id = line_info['row_id']
+                is_extrapolated = line_info['is_extrapolated']
+
+                # Choose color based on row
+                color = 'yellow' if row_id == 1 else 'cyan'
+
+                # Choose style based on whether it's extrapolated
+                if is_extrapolated:
+                    linestyle = ':'
+                    alpha = 0.4
+                    linewidth = 2
+                    label = f'Row {row_id} Line (Extrapolated)'
+                else:
+                    linestyle = '--'
+                    alpha = 0.5
+                    linewidth = 3
+                    label = f'Row {row_id} Line'
+
+                ax.plot([x1, x2], [y1, y2],
+                       color=color, linewidth=linewidth, alpha=alpha,
+                       linestyle=linestyle, label=label)
 
         predicted_positions = well_tracker.get_all_predicted_positions()
         
@@ -359,18 +374,19 @@ class Visualizer:
     def _get_well_tracking_legend_elements(self, results: Dict, config, REMBG_AVAILABLE, PIL_AVAILABLE) -> List[Line2D]:
         """Get legend elements for well tracking."""
         legend_elements = [
-            Line2D([0], [0], marker='o', color='w', markerfacecolor='lime', 
+            Line2D([0], [0], marker='o', color='w', markerfacecolor='lime',
                    markersize=10, lw=3, markeredgecolor='lime', label=f'Row 1 Wells (1,1)-(1,{config.total_wells_row1})'),
-            Line2D([0], [0], marker='o', color='w', markerfacecolor='aqua', 
+            Line2D([0], [0], marker='o', color='w', markerfacecolor='aqua',
                    markersize=10, lw=3, markeredgecolor='aqua', label=f'Row 2 Wells (2,1)-(2,{config.total_wells_row2})'),
-            Line2D([0], [0], marker='o', color='w', markerfacecolor='none', 
+            Line2D([0], [0], marker='o', color='w', markerfacecolor='none',
                    markersize=10, lw=2, markeredgecolor='yellow', linestyle=':', label='Predicted R1'),
-            Line2D([0], [0], marker='o', color='w', markerfacecolor='none', 
+            Line2D([0], [0], marker='o', color='w', markerfacecolor='none',
                    markersize=10, lw=2, markeredgecolor='cyan', linestyle=':', label='Predicted R2'),
-            Line2D([0], [0], marker='o', color='w', markerfacecolor='none', 
+            Line2D([0], [0], marker='o', color='w', markerfacecolor='none',
                    markersize=10, lw=3, markeredgecolor='orange', label='Unassigned'),
             Line2D([0], [0], color='yellow', lw=3, ls='--', alpha=0.5, label='Row 1 Line'),
-            Line2D([0], [0], color='cyan', lw=3, ls='--', alpha=0.5, label='Row 2 Line')
+            Line2D([0], [0], color='cyan', lw=3, ls='--', alpha=0.5, label='Row 2 Line'),
+            Line2D([0], [0], color='gray', lw=2, ls=':', alpha=0.4, label='Extrapolated Row')
         ]
 
         # Only show edge detection elements if edge condition is not satisfied yet
@@ -480,7 +496,22 @@ class Visualizer:
                 title_parts.append(f"R1@F{row1_last}")
             if frame_number - row2_last > 5:
                 title_parts.append(f"R2@F{row2_last}")
-        
+
+        # Row extrapolation status
+        row_extrap = edge_status.get('row_extrapolation_active', {})
+        if row_extrap.get(1) or row_extrap.get(2):
+            extrap_rows = []
+            if row_extrap.get(1):
+                extrap_rows.append('R1')
+            if row_extrap.get(2):
+                extrap_rows.append('R2')
+            title_parts.append(f"Extrapolating: {','.join(extrap_rows)}")
+
+        # Inter-row spacing info
+        inter_spacing = edge_status.get('inter_row_spacing')
+        if inter_spacing is not None:
+            title_parts.append(f"InterRowΔ={inter_spacing:.1f}px")
+
         return " - ".join(title_parts)
 
     def _add_motor_position_box(self, ax, motor_data):
