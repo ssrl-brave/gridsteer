@@ -736,7 +736,7 @@ class WellTrackingSystem:
                     if edge_status.get('rows_established'):
                         rows_msg = " | Rows: Established (ClosestRow)"
                     else:
-                        rows_msg = " | Rows: Learning (DBSCAN)"
+                        rows_msg = " | Rows: Learning (K-Means)"
 
                     logger.info(f"Progress: {progress_pct:.1f}% - Frame {frame_number} - φ={motor_data.phi:.1f}°{edge_msg}{rows_msg}")
 
@@ -883,6 +883,9 @@ class WellTracker:
 
         self.rows_established = False
         self.well_center_tracker = None
+
+        # Store K-Means clustering metadata for visualization
+        self.kmeans_cluster_metadata = None
     
     def _check_and_handle_phi_flip(self, current_phi: float) -> bool:
         """Check if phi has changed by >90° and handle row flipping."""
@@ -1040,72 +1043,19 @@ class WellTracker:
             logger.debug(f"Frame {self.frame_number}: Using Established Row Assignment")
             return self._assign_to_established_rows(detections)
 
-        logger.debug(f"Frame {self.frame_number}: Using DBSCAN Clustering For Row Detection")
-        
+        logger.debug(f"Frame {self.frame_number}: Using K-Means Clustering For Row Detection")
+
         if len(detections) < 2:
             # Not enough detections to cluster
+            self.kmeans_cluster_metadata = None
             return {}
-        
-        rows = self.geometry_utils.cluster_points_by_y(detections, self.config.row_y_tolerance, min_samples=2)
-        
-        # Handle noise points by assigning to closest row
-        noise_points = []
-        for detection in detections:
-            found = False
-            for row_detections in rows.values():
-                if detection in row_detections:
-                    found = True
-                    break
-            if not found:
-                noise_points.append(detection)
-        
-        for detection in noise_points:
-            min_dist = float('inf')
-            best_row = None
-            for row_id, row_detections in rows.items():
-                if row_detections:
-                    avg_y = np.mean([d[1] for d in row_detections])
-                    dist = abs(detection[1] - avg_y)
-                    if dist < self.config.row_y_tolerance and dist < min_dist:
-                        min_dist = dist
-                        best_row = row_id
-            
-            if best_row is not None:
-                rows[best_row].append(detection)
-            elif rows:
-                new_row_id = max(rows.keys()) + 1
-                rows[new_row_id] = [detection]
-        
+
+        rows, self.kmeans_cluster_metadata = self.geometry_utils.cluster_points_by_y(detections, self.config.row_separation_min)
+
+        # K-Means returns either 1 or 2 rows based on separation distance
         if len(rows) < 2:
             return {}
-        
-        # Validate row separation
-        if len(rows) == 2:
-            row_ids = list(rows.keys())
-            row1_avg_y = np.mean([d[1] for d in rows[row_ids[0]]])
-            row2_avg_y = np.mean([d[1] for d in rows[row_ids[1]]])
-            
-            if abs(row1_avg_y - row2_avg_y) < self.config.row_separation_min:
-                return {}
-        
-        # Merge rows until we have exactly 2
-        while len(rows) > 2:
-            row_ids = list(rows.keys())
-            avg_ys = {rid: np.mean([d[1] for d in rows[rid]]) for rid in row_ids}
-            
-            min_dist = float('inf')
-            merge_pair = None
-            for i in range(len(row_ids)):
-                for j in range(i + 1, len(row_ids)):
-                    dist = abs(avg_ys[row_ids[i]] - avg_ys[row_ids[j]])
-                    if dist < min_dist:
-                        min_dist = dist
-                        merge_pair = (row_ids[i], row_ids[j])
-            
-            if merge_pair:
-                rows[merge_pair[0]].extend(rows[merge_pair[1]])
-                del rows[merge_pair[1]]
-        
+
         # Identify rows by y-position with flipping logic
         if len(rows) == 2:
             row_ids = list(rows.keys())
@@ -1230,9 +1180,19 @@ class WellTracker:
         for well_id, ref_info in ref_row_wells.items():
             dist = calculate_distance((x, y), (ref_info['x'], ref_info['y']))
             
-            threshold = self.row_spacing.get(row_id, self.config.association_distance_threshold) * 0.5
-            threshold = min(threshold, self.config.association_distance_threshold)
+            # threshold = self.row_spacing.get(row_id, self.config.association_distance_threshold) * 0.5
+            # threshold = min(threshold, self.config.association_distance_threshold)
             
+            # Use more lenient threshold when spacing not yet established
+            if self.row_spacing.get(row_id) or self.established_spacing:
+                threshold = self.row_spacing.get(row_id, self.established_spacing) * 0.5
+                threshold = min(threshold, self.config.association_distance_threshold)
+            else:
+                # No spacing established yet - use full association distance threshold
+                threshold = self.config.association_distance_threshold
+
+            logger.debug(f"Frame {self.frame_number}: Checking Well {well_id}: dist={dist:.1f}px, threshold={threshold:.1f}px")
+
             if dist < min_dist and dist < threshold:
                 min_dist = dist
                 best_id = well_id
@@ -1245,8 +1205,9 @@ class WellTracker:
     def _reevaluate_all_assignments(self, rows: Dict[int, List[Tuple]]) -> bool:
         """Re-evaluate all assignments when unassigned wells are detected."""
         logger.debug(f"Re-Evaluating All Assignments At Frame {self.frame_number}")
-        
+
         self.detected_wells = {}
+        self.unassigned_detections = []
         all_detections = []
         for row_id, row_detections in rows.items():
             for det in row_detections:
@@ -1960,5 +1921,6 @@ class WellTracker:
             'row1_last_seen': self.last_successful_row_frame.get(1),
             'row2_last_seen': self.last_successful_row_frame.get(2),
             'row1_wells_count': len(self.last_successful_row_wells.get(1, {})),
-            'row2_wells_count': len(self.last_successful_row_wells.get(2, {}))
+            'row2_wells_count': len(self.last_successful_row_wells.get(2, {})),
+            'kmeans_cluster_metadata': self.kmeans_cluster_metadata
         }

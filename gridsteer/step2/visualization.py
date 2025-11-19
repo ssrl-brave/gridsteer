@@ -133,9 +133,20 @@ class Visualizer:
         axes[1].axis('off')
 
         axes[2].imshow(results['img'], cmap='gray', aspect='equal')
+        edge_status = results.get('edge_detection_status', {})
+        kmeans_metadata = edge_status.get('kmeans_cluster_metadata')
+        rows_established = edge_status.get('rows_established', False)
         if results['circles']:
-            self._draw_circle_detections_debug(axes[2], results['circles'])
-        axes[2].set_title(f'Circle Detection ({results["num_circles"]} Detected)', fontsize=12, fontweight='bold', color='blue')
+            self._draw_circle_detections_debug(axes[2], results['circles'], kmeans_metadata, rows_established)
+
+        title = f'Circle Detection ({results["num_circles"]} Detected)'
+        if kmeans_metadata and not rows_established:
+            n_detected = kmeans_metadata.get('n_clusters_detected', '?')
+            n_returned = kmeans_metadata.get('n_clusters_returned', '?')
+            sep_dist = kmeans_metadata.get('separation_distance', 0)
+            title += f' | K-Means: {n_returned}/{n_detected} Rows (Δ={sep_dist:.1f}px)'
+
+        axes[2].set_title(title, fontsize=12, fontweight='bold', color='blue')
         axes[2].axis('off')
 
         edge_status = results.get('edge_detection_status', {})
@@ -209,40 +220,82 @@ class Visualizer:
         self._create_well_tracking_subplot(axes[6], results, motor_data, frame_number,
                                           well_tracker, config, REMBG_AVAILABLE, PIL_AVAILABLE)
     
-    def _draw_circle_detections_debug(self, ax, circles: Tuple):
-        """Draw detected circles with confidence information."""
+    def _draw_circle_detections_debug(self, ax, circles: Tuple, kmeans_metadata: Optional[Dict] = None, rows_established: bool = False):
+        """Draw detected circles with confidence and K-Means cluster information.
+
+        Only shows K-Means cluster information (labels, centroids) when rows_established=False
+        (i.e., during the Learning phase when K-Means is actively being used).
+        """
         accum_values, cx, cy, radii = circles
-        
+
         if len(accum_values) == 0:
-            ax.text(0.5, 0.5, 'No Circles Detected', ha='center', va='center', 
+            ax.text(0.5, 0.5, 'No Circles Detected', ha='center', va='center',
                    transform=ax.transAxes, fontsize=14, color='red', fontweight='bold')
             return
-            
+
         max_accum = np.max(accum_values)
         min_accum = np.min(accum_values)
         accum_range = max_accum - min_accum if max_accum > min_accum else 1.0
-        
+
+        # Get cluster assignments if available and K-Means is actively being used
+        cluster_labels = None
+        if kmeans_metadata and 'cluster_labels' in kmeans_metadata and not rows_established:
+            cluster_labels = kmeans_metadata['cluster_labels']
+
         for i, (x, y, r, acc) in enumerate(zip(cx, cy, radii, accum_values)):
             normalized_conf = (acc - min_accum) / accum_range if accum_range > 0 else 1.0
             alpha = 0.5 + 0.5 * normalized_conf
             linewidth = 1 + 2 * normalized_conf
 
-            if normalized_conf > 0.75:
-                color = 'lime'
-            elif normalized_conf > 0.5:
-                color = 'cyan'
+            # Choose color based on cluster assignment if available (only during Learning phase)
+            if cluster_labels and i < len(cluster_labels):
+                cluster_id = cluster_labels[i]
+                if cluster_id == 1:
+                    color = 'magenta'  # Row 1
+                elif cluster_id == 2:
+                    color = 'cyan'  # Row 2
+                else:
+                    color = 'orange'  # Shouldn't happen
             else:
-                color = 'yellow'
+                # Default confidence-based coloring
+                if normalized_conf > 0.75:
+                    color = 'lime'
+                elif normalized_conf > 0.5:
+                    color = 'cyan'
+                else:
+                    color = 'yellow'
 
             circle = plt.Circle((x, y), r, ec=color, fc='none', ls='-',
                               alpha=alpha, lw=linewidth)
             ax.add_patch(circle)
 
-            ax.text(x, y, f'{acc:.2f}', ha='center', va='center', fontsize=8,
+            # Show cluster assignment in label (only during Learning phase)
+            if cluster_labels and i < len(cluster_labels):
+                label_text = f'C{cluster_labels[i]}\n{acc:.2f}'
+            else:
+                label_text = f'{acc:.2f}'
+
+            ax.text(x, y, label_text, ha='center', va='center', fontsize=8,
                    color='white', fontweight='bold',
                    bbox=dict(boxstyle='round,pad=0.2', facecolor=color, alpha=0.7))
 
             ax.plot(x, y, 'o', color=color, markersize=2, alpha=alpha)
+
+        # Draw cluster centroids if available and K-Means is actively being used
+        if kmeans_metadata and 'centroids' in kmeans_metadata and not rows_established:
+            centroids = kmeans_metadata['centroids']
+            img_width = ax.get_xlim()[1] - ax.get_xlim()[0]
+
+            for row_id, centroid_y in centroids.items():
+                # Draw a horizontal line at the centroid
+                color = 'magenta' if row_id == 1 else 'cyan'
+                ax.axhline(y=centroid_y, color=color, linestyle='--', linewidth=2, alpha=0.6)
+
+                # Add label for centroid
+                ax.text(5, centroid_y, f'Row {row_id} Centroid\ny={centroid_y:.1f}',
+                       fontsize=9, color=color, fontweight='bold',
+                       bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.8),
+                       verticalalignment='center')
     
     def _create_well_tracking_subplot(self, ax, results: Dict, motor_data, frame_number: int,
                                      well_tracker, config, REMBG_AVAILABLE, PIL_AVAILABLE):
@@ -409,7 +462,7 @@ class Visualizer:
         if edge_status.get('rows_established'):
             legend_elements.append(Line2D([0], [0], color='purple', lw=3, label='Rows: Established (Closest-Row)'))
         else:
-            legend_elements.append(Line2D([0], [0], color='orange', lw=3, label='Rows: Learning (DBSCAN)'))
+            legend_elements.append(Line2D([0], [0], color='orange', lw=3, label='Rows: Learning (K-Means)'))
 
         if config.use_background_removal:
             if REMBG_AVAILABLE and PIL_AVAILABLE:
@@ -466,7 +519,7 @@ class Visualizer:
         if edge_status.get('rows_established'):
             title_parts.append("RowsEst(ClosestRow)")
         else:
-            title_parts.append("RowsLearn(DBSCAN)")
+            title_parts.append("RowsLearn(K-Means)")
 
         if config.use_background_removal:
             if REMBG_AVAILABLE and PIL_AVAILABLE:

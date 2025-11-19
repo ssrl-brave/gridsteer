@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from gridsteer.step2.main import Config
 
 from sklearn.linear_model import RANSACRegressor
-from sklearn.cluster import DBSCAN
+from sklearn.cluster import KMeans
 from skimage.feature import canny
 from skimage.transform import hough_circle, hough_circle_peaks, hough_line, hough_line_peaks
 
@@ -407,20 +407,56 @@ class GeometryUtils:
         return abs(slope) <= max_allowed_slope
 
     @staticmethod
-    def cluster_points_by_y(points: List[Tuple], y_tolerance: float, min_samples: int = 2) -> Dict[int, List[Tuple]]:
-        """Cluster points by y-coordinate using DBSCAN."""
-        if len(points) < min_samples:
-            return {}
+    def cluster_points_by_y(points: List[Tuple], row_separation_min: float) -> Tuple[Dict[int, List[Tuple]], Dict]:
+        """Cluster points by y-coordinate using K-Means."""
+        if len(points) < 2:
+            return {}, {}
 
         y_coords = np.array([p[1] for p in points]).reshape(-1, 1)
-        clustering = DBSCAN(eps=y_tolerance, min_samples=min_samples).fit(y_coords)
 
-        clusters = {}
-        for i, label in enumerate(clustering.labels_):
-            if label == -1:
-                continue
-            if label + 1 not in clusters:
-                clusters[label + 1] = []
-            clusters[label + 1].append(points[i])
+        # Always try with 2 clusters first
+        kmeans = KMeans(n_clusters=2, random_state=42, n_init=10).fit(y_coords)
 
-        return clusters
+        # Get cluster centers
+        centers = kmeans.cluster_centers_.flatten()
+        center_0, center_1 = sorted(centers)
+        separation_distance = abs(center_1 - center_0)
+
+        # Check if clusters are separated enough to be 2 rows
+        if separation_distance >= row_separation_min:
+            # Two distinct rows
+            clusters = {}
+            # Map labels to sorted centroids (top row gets lower y)
+            label_to_centroid = {i: kmeans.cluster_centers_[i, 0] for i in range(2)}
+            sorted_labels = sorted(label_to_centroid.keys(), key=lambda k: label_to_centroid[k])
+
+            centroids = {}
+            for i, label in enumerate(kmeans.labels_):
+                # Map original labels to row IDs (1, 2) based on sorted order
+                row_id = sorted_labels.index(label) + 1
+                if row_id not in clusters:
+                    clusters[row_id] = []
+                    centroids[row_id] = label_to_centroid[label]
+                clusters[row_id].append(points[i])
+
+            metadata = {
+                'n_clusters_detected': 2,
+                'n_clusters_returned': 2,
+                'centroids': centroids,
+                'cluster_labels': [sorted_labels.index(label) + 1 for label in kmeans.labels_],
+                'separation_distance': separation_distance,
+                'points': list(points)
+            }
+            return clusters, metadata
+        else:
+            # Single row - all points belong to row 1
+            avg_y = np.mean(y_coords)
+            metadata = {
+                'n_clusters_detected': 2,
+                'n_clusters_returned': 1,
+                'centroids': {1: avg_y},
+                'cluster_labels': [1] * len(points),
+                'separation_distance': separation_distance,
+                'points': list(points)
+            }
+            return {1: list(points)}, metadata
