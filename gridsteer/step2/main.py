@@ -83,7 +83,6 @@ class Config:
 
     row_y_tolerance: int = 40
     row_separation_min: int = 150
-    initial_row_layout_flipped: bool = False
 
     ransac_max_trials: int = 100
     association_distance_threshold: float = 50.0

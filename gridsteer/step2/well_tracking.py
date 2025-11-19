@@ -689,9 +689,6 @@ class WellTrackingSystem:
 
         logger.info(f"Processing {total_frames_to_process} Frames")
 
-        initial_layout = "Row 2 Top, Row 1 Bottom" if self.config.initial_row_layout_flipped else "Row 1 Top, Row 2 Bottom"
-        logger.info(f"Initial Row Layout: {initial_layout}")
-
         if self.config.enable_edge_detection:
             logger.info(f"Edge Detection Enabled")
         else:
@@ -877,57 +874,12 @@ class WellTracker:
         self.edge_detection_frame = None
         self.edge_circle_info = None
 
-        self.last_perpendicular_phi = None
-        self.row_layout_flipped = config.initial_row_layout_flipped
-        self.phi_flip_history = []
-
         self.rows_established = False
         self.well_center_tracker = None
 
         # Store K-Means clustering metadata for visualization
         self.kmeans_cluster_metadata = None
-    
-    def _check_and_handle_phi_flip(self, current_phi: float) -> bool:
-        """Check if phi has changed by >90° and handle row flipping."""
-        flip_occurred = False
-        
-        if self.last_perpendicular_phi is not None:
-            phi_diff = calculate_angle_difference(current_phi, self.last_perpendicular_phi)
-            
-            if phi_diff > 90.0:
-                self.row_layout_flipped = not self.row_layout_flipped
-                flip_occurred = True
-                
-                flip_info = {
-                    'frame': self.frame_number,
-                    'previous_phi': self.last_perpendicular_phi,
-                    'current_phi': current_phi,
-                    'phi_difference': phi_diff,
-                    'new_layout_flipped': self.row_layout_flipped
-                }
-                self.phi_flip_history.append(flip_info)
-                
-                logger.info(f"Row Layout Flip Detected At Frame {self.frame_number}")
-                logger.info(f"  Previous Phi: {self.last_perpendicular_phi:.1f}°")
-                logger.info(f"  Current Phi: {current_phi:.1f}°")
-                logger.info(f"  Phi Difference: {phi_diff:.1f}°")
-                logger.info(f"  Row Layout Now: {'Flipped' if self.row_layout_flipped else 'Normal'}")
-                layout_desc = "Row 2 Top, Row 1 Bottom" if self.row_layout_flipped else "Row 1 Top, Row 2 Bottom"
-                logger.info(f"  Current Layout: {layout_desc}")
 
-                self.established_spacing = None
-                self.reference_frame_wells = {}
-                self.reference_frame_number = None
-                self.last_successful_frame_wells = {}
-                self.last_successful_frame_number = None
-                self.rows_established = False
-                self.inter_row_spacing = None
-                self.row_extrapolation_active = {1: False, 2: False}
-        
-        self.last_perpendicular_phi = current_phi
-        
-        return flip_occurred
-    
     def _check_edge_condition(self, detections: List[Tuple], lines: List) -> Tuple[bool, Optional[Dict]]:
         """Check if circle is at edge of row."""
         if not self.config.enable_edge_detection or not lines or not detections:
@@ -1013,32 +965,15 @@ class WellTracker:
             # Only assign if within reasonable distance (more lenient than initial clustering)
             if closest_row is not None and min_dist < self.config.row_y_tolerance * 3:
                 rows[closest_row].append(det)
-        
-        # Apply row flipping logic if both rows have detections
-        if rows[1] and rows[2]:
-            avg_y1 = np.mean([d[1] for d in rows[1]])
-            avg_y2 = np.mean([d[1] for d in rows[2]])
-            
-            if not self.row_layout_flipped:
-                # Normal: row with smaller y should be row 1
-                if avg_y1 > avg_y2:
-                    rows[1], rows[2] = rows[2], rows[1]
-            else:
-                # Flipped: row with smaller y should be row 2
-                if avg_y1 < avg_y2:
-                    rows[1], rows[2] = rows[2], rows[1]
-        
+
         # Remove empty rows
         return {k: v for k, v in rows.items() if v}
     
     def _detect_rows(self, detections: List[Tuple], current_phi: float = None) -> Dict[int, List[Tuple]]:
-        """Detect and cluster detections into two rows with phi-based row flipping."""
+        """Detect and cluster detections into two rows."""
         if len(detections) < 1:
             return {}
-        
-        if current_phi is not None:
-            self._check_and_handle_phi_flip(current_phi)
-        
+
         if self.rows_established and len(self.row_params) >= 1:
             logger.debug(f"Frame {self.frame_number}: Using Established Row Assignment")
             return self._assign_to_established_rows(detections)
@@ -1056,26 +991,21 @@ class WellTracker:
         if len(rows) < 2:
             return {}
 
-        # Identify rows by y-position with flipping logic
+        # Identify rows by y-position (row 1 is top, row 2 is bottom)
         if len(rows) == 2:
             row_ids = list(rows.keys())
             row1_dets = rows[row_ids[0]]
             row2_dets = rows[row_ids[1]]
-            
+
             row1_y = np.mean([d[1] for d in row1_dets])
             row2_y = np.mean([d[1] for d in row2_dets])
-            
-            if not self.row_layout_flipped:
-                if row1_y < row2_y:
-                    return {1: row1_dets, 2: row2_dets}
-                else:
-                    return {1: row2_dets, 2: row1_dets}
+
+            # Row with smaller y (top) is row 1, larger y (bottom) is row 2
+            if row1_y < row2_y:
+                return {1: row1_dets, 2: row2_dets}
             else:
-                if row1_y < row2_y:
-                    return {2: row1_dets, 1: row2_dets}
-                else:
-                    return {2: row2_dets, 1: row1_dets}
-        
+                return {1: row2_dets, 2: row1_dets}
+
         return rows
     
     def _validate_stagger_consistency(self) -> bool:
@@ -1619,13 +1549,8 @@ class WellTracker:
             if len(row1_wells) > 0 and len(row2_wells) == 0 and 1 in self.row_params:
                 slope1, intercept1 = self.row_params[1]
 
-                # Determine if row 2 should be above or below row 1
-                if self.row_layout_flipped:
-                    # Row 2 is above row 1 (smaller y)
-                    offset = -self.inter_row_spacing
-                else:
-                    # Row 2 is below row 1 (larger y)
-                    offset = self.inter_row_spacing
+                # Row 2 is below row 1 (larger y)
+                offset = self.inter_row_spacing
 
                 # Extrapolate row 2's position (same slope, shifted intercept)
                 new_intercept2 = intercept1 + offset
@@ -1637,13 +1562,8 @@ class WellTracker:
             elif len(row2_wells) > 0 and len(row1_wells) == 0 and 2 in self.row_params:
                 slope2, intercept2 = self.row_params[2]
 
-                # Determine if row 1 should be above or below row 2
-                if self.row_layout_flipped:
-                    # Row 1 is below row 2 (larger y)
-                    offset = self.inter_row_spacing
-                else:
-                    # Row 1 is above row 2 (smaller y)
-                    offset = -self.inter_row_spacing
+                # Row 1 is above row 2 (smaller y)
+                offset = -self.inter_row_spacing
 
                 # Extrapolate row 1's position (same slope, shifted intercept)
                 new_intercept1 = intercept2 + offset
@@ -1908,9 +1828,6 @@ class WellTracker:
             'edge_detection_frame': self.edge_detection_frame,
             'edge_circle_info': self.edge_circle_info,
             'current_frame': self.frame_number,
-            'row_layout_flipped': self.row_layout_flipped,
-            'last_perpendicular_phi': self.last_perpendicular_phi,
-            'phi_flip_history': self.phi_flip_history,
             'last_successful_frame': self.last_successful_frame_number,
             'num_successful_frame_wells': len(self.last_successful_frame_wells),
             'rows_established': self.rows_established,

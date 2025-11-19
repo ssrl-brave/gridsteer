@@ -530,13 +530,6 @@ class Visualizer:
             else:
                 title_parts.append("BG-Error")
 
-        if edge_status.get('row_layout_flipped'):
-            flip_count = len(edge_status.get('phi_flip_history', []))
-            if flip_count > 0:
-                title_parts.append(f"Layout Flipped ({flip_count}x)")
-            else:
-                title_parts.append("Layout Flipped")
-
         last_successful = edge_status.get('last_successful_frame')
         if last_successful is not None:
             title_parts.append(f"LastOK@F{last_successful}")
