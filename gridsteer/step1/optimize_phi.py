@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from datetime import datetime
 
-from gridsteer import  optimize_phi_transient
+from gridsteer.step1 import  optimize_phi_transient
 
 
 @dataclass

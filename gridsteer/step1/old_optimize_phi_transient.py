@@ -50,24 +50,12 @@ class Config:
     horizontal_tolerance_degrees: float = 45.0
     check_line_intersection: bool = True
     intersection_margin: int = 0
-
-    # Edge Refinement Parameters
-    use_contrast_refinement: bool = True
-    refinement_buffer: int = 10  # Pixels around the mask to check for contrast
-    refinement_canny_sigma: float = 1.0
-    refinement_canny_low: float = 0.05
-    refinement_canny_high: float = 0.15
-
+    
     # Backup edge detection
     backup_edge_sigma: float = 15.0
     backup_edge_low_threshold: float = 0.2
     backup_edge_high_threshold: float = 0.7
-
-    # Background Removal / Mask Post-Processing
-    mask_threshold: int = 140  # Threshold for rembg mask (0-255). Higher = more strict.
-    mask_opening_kernel_size: int = 7 # Kernel size for morphological opening (odd number, e.g., 3, 5)
-    mask_erosion_kernel_size: int = 10 # Kernel size for morphological erosion (e.g., 2, 3)
-
+    
     # Output settings
     save_individual_frames: bool = True
     
@@ -163,33 +151,11 @@ class BackgroundRemover:
                 output = remove(pil_image)
                 
             result_array = np.array(output)
-
+            
             # Extract mask from alpha channel if available
             if result_array.shape[2] == 4:  # RGBA
                 alpha_channel = result_array[:, :, 3]
-                initial_mask = (alpha_channel > 0).astype(np.uint8) * 255
-
-                # --- START: Mask Post-Processing for Stricter Outline ---
-
-                # 1. Apply a threshold to ensure only strong pixels remain in the mask
-                _, thresholded_mask = cv2.threshold(initial_mask,
-                                                    self.config.mask_threshold,
-                                                    255,
-                                                    cv2.THRESH_BINARY)
-
-                # 2. Apply morphological opening to remove small isolated noise
-                kernel_size_opening = self.config.mask_opening_kernel_size
-                kernel_opening = np.ones((kernel_size_opening, kernel_size_opening), np.uint8)
-                opened_mask = cv2.morphologyEx(thresholded_mask, cv2.MORPH_OPEN, kernel_opening)
-
-                # 3. Apply morphological erosion to shrink the mask slightly
-                kernel_size_erosion = self.config.mask_erosion_kernel_size
-                kernel_erosion = np.ones((kernel_size_erosion, kernel_size_erosion), np.uint8)
-                mask = cv2.erode(opened_mask, kernel_erosion, iterations=1)
-
-                logger.debug(f"Mask post-processing applied (threshold={self.config.mask_threshold}, opening={kernel_size_opening}, erosion={kernel_size_erosion}).")
-
-                # --- END: Mask Post-Processing ---
+                mask = (alpha_channel > 0).astype(np.uint8) * 255
                 
                 if len(img_normalized.shape) == 2:
                     result = np.where(alpha_channel > 0, img_normalized, 0)
@@ -219,55 +185,16 @@ class OutlineTracer:
     def __init__(self, config: Config):
         self.config = config
     
-    def trace_external_outline(self, original_img: np.ndarray, mask: np.ndarray) -> Tuple[Optional[np.ndarray], Optional[List], bool]:
-        """Trace the external outline, using contrast refinement if necessary.
-
+    def trace_external_outline(self, background_removed_img: np.ndarray, mask: np.ndarray) -> Tuple[Optional[np.ndarray], Optional[List], bool]:
+        """Trace the external outline of the largest object from background-removed image
+        
         Returns:
             - outline_coords: The original unfiltered coordinates
             - segments: List of coordinate segments
             - is_closed: Whether the contour is closed
         """
-        refined_mask = mask.copy()
-
-        # Contrast refinement is typically applied to rembg/intensity mask output
-        if self.config.use_contrast_refinement:
-            try:
-                # 1. Find edges using Canny on the original image
-                if original_img.dtype == np.uint8:
-                    img_float = original_img / 255.0
-                else:
-                    img_float = original_img
-
-                # Canny edge detection on the original image
-                edges = canny(img_float,
-                              sigma=self.config.refinement_canny_sigma,
-                              low_threshold=self.config.refinement_canny_low,
-                              high_threshold=self.config.refinement_canny_high,
-                              use_quantiles=True)
-
-                edges_uint8 = (edges * 255).astype(np.uint8)
-
-                # 2. Create a region of interest (ROI) mask around the existing mask boundary
-                kernel = np.ones((self.config.refinement_buffer, self.config.refinement_buffer), np.uint8)
-                dilated_mask = cv2.dilate(mask, kernel, iterations=1)
-
-                roi_mask = cv2.bitwise_and(dilated_mask, cv2.bitwise_not(mask))
-
-                # 3. Apply Canny edges only within the ROI and merge with the mask
-                contrast_edges_in_roi = cv2.bitwise_and(edges_uint8, edges_uint8, mask=roi_mask)
-
-                # Merge the high-contrast edges back into the mask
-                refined_mask = cv2.bitwise_or(mask, contrast_edges_in_roi)
-
-                logger.debug("Contrast-Based Mask Refinement Applied Successfully.")
-
-            except Exception as e:
-                logger.warning(f"Contrast Refinement Failed: {e}. Using Original Mask.")
-                refined_mask = mask
-
         try:
-            # Use the refined mask for contour finding
-            contours, _ = cv2.findContours(refined_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             
             if not contours:
                 logger.debug("No Contours Found In Background-Removed Image")
@@ -426,9 +353,9 @@ class HorizontalLineDetector:
         if (self.config.use_background_removal and background_removed_img is not None and 
             mask is not None):
             logger.debug("Using Direct Outline Tracing From Background-Removed Image")
-
+            
             contour_coords, segments, is_closed = self.outline_tracer.trace_external_outline(
-                img, mask)
+                background_removed_img, mask)
             
             if contour_coords is not None and segments is not None:
                 contour_img, ph, lines = self.line_detector.detect_lines(
