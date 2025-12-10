@@ -3,6 +3,7 @@
 Persistent Frame Processor - Handles frame iteration and calls non-persistent analyzer
 
 python optimize_phi.py "/qfs/projects/bioprep/data/automation/new_grid_center_db.2/" 99 --verbose
+python -m gridsteer.step1.Old.ImprovedLineFindingImplementation.optimize_phi "/qfs/projects/bioprep/data/automation/new_grid_center_db.2/" 99 --verbose
 """
 
 import subprocess
@@ -16,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from datetime import datetime
 
-from gridsteer.step1 import  optimize_phi_transient
+from gridsteer.step1.Old.ImprovedLineFindingImplementation import  optimize_phi_transient
 
 
 @dataclass
