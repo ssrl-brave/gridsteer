@@ -137,15 +137,15 @@ class Config:
 
     @property
     def output_dir(self):
-        return os.path.join( self.output_root,"output_video")
+        return os.path.join( self.output_root,"output_video_2")
     
     @property
     def output_images_dir( self): 
-        return os.path.join( self.output_root, "output_images")
+        return os.path.join( self.output_root, "output_images_2")
 
     @property
     def output_json_dir(self):
-        return os.path.join(self.output_root,  "output_json")
+        return os.path.join(self.output_root,  "output_json_2")
     
     @property
     def log_directory(self):

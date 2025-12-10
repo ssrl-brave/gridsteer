@@ -8,7 +8,7 @@ ap.add_argument("dirname", type=str)
 ap.add_argument("wellid", nargs=2, type=int)
 args = ap.parse_args()
 
-json_f=os.path.join(args.dirname, "output_json", "mapping.json")
+json_f=os.path.join(args.dirname, "output_json_2", "mapping.json")
 a,b = args.wellid
 wellKey = f"({a},{b})"
 
