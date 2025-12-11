@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
 Hough Circle Radius Detector - Detects circles using Hough Transform with 2-line constraint
+
+python -m gridsteer.step1_5.find_radius "/qfs/projects/bioprep/data/automation/mappers/mapper16/frame16.npz" --visualize-all
 """
 
 import numpy as np
