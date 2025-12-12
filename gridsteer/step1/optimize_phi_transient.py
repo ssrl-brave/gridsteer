@@ -138,7 +138,7 @@ class TrayWidthDetector:
             num_perpendicular_lines: Number of perpendicular lines to sample
 
         Returns:
-            avg_width: Average tray width across perpendicular lines
+            avg_width: Median tray width across perpendicular lines
             debug_info: Dictionary with debug information
         """
         # Normalize image to 0-1 range
@@ -360,8 +360,8 @@ class TrayWidthDetector:
             logger.warning("Could Not Measure Any Widths")
             return float('inf'), {'error': 'Could not measure widths'}
 
-        avg_width = np.mean(widths)
-        logger.info(f"Average Tray Width: {avg_width:.2f} Pixels (Widths: {widths})")
+        avg_width = np.median(widths)
+        logger.info(f"Median Tray Width: {avg_width:.2f} Pixels (Widths: {widths})")
 
         debug_info = {
             'parallel_line_slope': m_parallel,
@@ -449,7 +449,7 @@ class LineAnalyzer:
             updated_state.min_width_found = width_measurement.avg_width
             updated_state.best_frame_info = width_measurement.to_dict()
             is_best_frame = True
-            logger.info(f"New Best Frame: {frame_number} With Average Width {width_measurement.avg_width:.2f}px at Phi={motor_data.phi:.6f}")
+            logger.info(f"New Best Frame: {frame_number} With Median Width {width_measurement.avg_width:.2f}px at Phi={motor_data.phi:.6f}")
 
         if self.config.save_individual_frames:
             try:
@@ -569,7 +569,7 @@ class LineAnalyzer:
         # Plot 4: Width bar chart
         if len(widths) > 0:
             axes[1, 0].bar(range(len(widths)), widths, color=colors[:len(widths)])
-            axes[1, 0].axhline(y=np.mean(widths), color='red', linestyle='--', linewidth=2, label=f'Avg: {np.mean(widths):.1f}px')
+            axes[1, 0].axhline(y=np.median(widths), color='red', linestyle='--', linewidth=2, label=f'Median: {np.median(widths):.1f}px')
             axes[1, 0].set_xlabel('Perpendicular Line Index')
             axes[1, 0].set_ylabel('Width (pixels)')
             axes[1, 0].set_title('Width Measurements Along Each Line')
@@ -632,7 +632,7 @@ class LineAnalyzer:
         summary_text = f"Frame: {frame_number}\n"
         summary_text += f"φ: {motor_data.phi:.6f}°\n\n"
         if width_measurement:
-            summary_text += f"Average Width: {width_measurement.avg_width:.2f} px\n"
+            summary_text += f"Median Width: {width_measurement.avg_width:.2f} px\n"
             summary_text += f"Individual Widths:\n"
             for i, w in enumerate(width_measurement.widths):
                 summary_text += f"  Line {i+1}: {w:.1f} px\n"

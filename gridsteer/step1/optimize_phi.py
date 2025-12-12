@@ -3,7 +3,7 @@
 Persistent Frame Processor - Handles frame iteration and calls non-persistent analyzer
 
 python optimize_phi.py "/qfs/projects/bioprep/data/automation/new_grid_center_db.2/" 99 --verbose
-python -m gridsteer.step1.optimize_phi "/qfs/projects/bioprep/data/automation/new_grid_center_db.2/" --verbose
+python -m gridsteer.step1.optimize_phi "/qfs/projects/bioprep/data/automation/phi.5" --verbose
 """
 
 import subprocess
@@ -199,7 +199,7 @@ class FrameProcessor:
                 self.logger.info(f" Frame Number: {best['frame_number']}")
                 self.logger.info(f" Phi Value: {best['phi']:.6f}°")
                 self.logger.info(f" Corrected Phi: {(best['phi'] + 90):.6f}°")
-                self.logger.info(f" Average Tray Width: {best['avg_width']:.2f} Pixels")
+                self.logger.info(f" Median Tray Width: {best['avg_width']:.2f} Pixels")
             else:
                 self.logger.info("No Valid Tray Width Measurements Found In Analyzed Frames")
             self.logger.info("=" * 60)
