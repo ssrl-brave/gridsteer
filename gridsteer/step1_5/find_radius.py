@@ -35,7 +35,7 @@ class HoughDetectorConfig:
     canny_sigma: float = 15.0
     canny_low: float = 0.3
     canny_high: float = 0.7
-    num_peaks: int = 20
+    num_peaks: int = 19
     max_lines: int = 2
     line_tolerance_factor: float = 0.5
 
