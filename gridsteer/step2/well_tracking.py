@@ -769,6 +769,13 @@ class WellTrackingSystem:
                 saved_path = self.well_center_tracker.save_to_json(filename=self.config.json_filename, motor_calibration=self.motor_calibration, well_tracker=self.well_tracker)
                 logger.info(f"Results Saved To: {saved_path}")
 
+            # Save calibration model
+            if self.motor_calibration and self.motor_calibration.is_calibrated:
+                output_dir = Path(self.config.output_json_dir)
+                model_path = output_dir / "calibration_model.pkl"
+                self.motor_calibration.save_model(str(model_path))
+                logger.info(f"Calibration Model Saved To: {model_path}")
+
             self._print_final_summary()
 
     def _print_final_summary(self):

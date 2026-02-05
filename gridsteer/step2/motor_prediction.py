@@ -5,8 +5,10 @@ Handles motor position prediction and calibration.
 
 import logging
 import numpy as np
+import pickle
 from collections import deque
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, Optional, Tuple, Set, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -554,3 +556,29 @@ class InverseMotorCalibration:
             'outliers_detected': self.training_stats['outliers_detected'],
             'outliers_by_method': self.training_stats['outliers_by_method']
         }
+
+    def save_model(self, filepath: str):
+        """Save the calibration model to a file."""
+        if not self.is_calibrated:
+            logger.warning("Cannot Save Uncalibrated Model")
+            return
+
+        model_data = {
+            'calibration_method': self.calibration_method,
+            'model_motor_x': self.model_motor_x,
+            'model_motor_y': self.model_motor_y,
+            'model_motor_z': self.model_motor_z,
+            'poly_features': self.poly_features,
+            'is_calibrated': self.is_calibrated,
+            'calibration_scores': self.calibration_scores,
+            'min_samples': self.min_samples,
+            'max_samples': self.max_samples,
+            'alpha': self.alpha,
+            'spline_smoothing': self.spline_smoothing
+        }
+
+        Path(filepath).parent.mkdir(parents=True, exist_ok=True)
+        with open(filepath, 'wb') as f:
+            pickle.dump(model_data, f)
+
+        logger.info(f"Calibration Model Saved to {filepath}")
