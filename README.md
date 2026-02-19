@@ -8,7 +8,7 @@ The system runs in three sequential stages:
 
 ```
 Step 1 --> Step 1.5 --> Step 2
- (phi)      (radius)    (motor positions)
+(phi)      (radius)     (motor positions)
 ```
 
 ### Step 1 — Phi Optimization (`gridsteer/step1`)
