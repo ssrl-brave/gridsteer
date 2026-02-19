@@ -19,7 +19,7 @@ Determines the rotation angle (phi) at which the sample tray is face-on to the c
 
 ### Step 1.5 — Well Radius Estimation (`gridsteer/step1_5`)
 
-Estimates the radius of the wells in pixels. It performs a radial sweep using the Hough Circle Transform, validates candidates against a two-row geometric constraint, and returns the median radius of the best-scoring result. Should be run on a frame with at least two circles in each row.
+Bridges Step 1 and Step 2: Step 2 requires a `target_radius` parameter to accurately locate and track individual wells, and Step 1.5 finds that value. It estimates the radius of the wells in pixels by performing a radial sweep using the Hough Circle Transform, validates candidates against a two-row geometric constraint, and returns the median radius of the best-scoring result. Should be run on a frame with at least two circles in each row.
 
 **Output**: well radius in pixels (float)
 
