@@ -170,7 +170,7 @@ Hardcoded in `optimize_phi_transient.py`:
 ### Basic Usage
 
 ```bash
-python -m gridsteer.step1.optimize_phi /path/to/data --verbose
+python -m gridsteer.step1.optimize_phi <path_to_data>
 ```
 
 ### With Custom Parameters
