@@ -39,10 +39,10 @@ python -m gridsteer.step1.optimize_phi /path/to/data --verbose
 python -m gridsteer.step1_5.find_radius /path/to/frame.npz
 
 # Step 2: Track wells and produce centering motor positions
-python -m gridsteer.step2.main /path/to/frames --target_radius $radius --outdir ./output
+python -m gridsteer.step2.main /path/to/frames --target_radius <radius> --outdir ./output
 
 # Query a specific well
-python gridsteer/step2/read.py ./output 1 1
+python gridsteer/step2/read.py ./output <row> <column>
 ```
 
 ## Data Format
