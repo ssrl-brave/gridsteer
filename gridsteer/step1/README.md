@@ -2,7 +2,7 @@
 
 ## Overview
 
-Step 1 finds the optimal phi for aligning the well plate with the camera. It processes a sequence of frames captured at different rotation angles and identifies the angle where the well plate is most aligned, measured by finding the minimum tray width.
+Step 1 finds the optimal phi to orient the well plate face-on toward the camera. The face-on view is the target orientation, but it is easier to detect the edge-on view (where the tray appears at its narrowest) and then add 90° to derive the face-on phi. The algorithm processes a sequence of frames captured at different rotation angles and identifies the frame with the minimum measured tray width, which corresponds to the edge-on orientation.
 
 ## System Architecture
 
@@ -28,7 +28,7 @@ File: `optimize_phi_transient.py:397-410` (`load_frame_data`)
 
 Identifies dark pixels below an adaptive threshold:
 - **Threshold**: Based on percentile (default: 25th percentile)
-- **Purpose**: Dark regions correspond to the tray/well plate
+- **Purpose**: Dark regions in a frame correspond to the tray/well plate
 
 ```python
 intensity_threshold = np.percentile(img_normalized, dark_percentile)
@@ -36,21 +36,25 @@ dark_mask = img_normalized < intensity_threshold
 dark_points = np.column_stack(np.where(dark_mask))
 ```
 
+However, shadows and optical artifacts in the image can also appear as dark regions, so the raw set of dark points is not a clean representation of the tray alone.
+
 File: `optimize_phi_transient.py:144-162`
 
 ### Step 3: DBSCAN Clustering
 
-Clusters dark points to isolate the main tray region from the background noise:
+Clusters dark points to isolate the main tray region from noise, shadows, and artifacts:
 
 ```python
 clustering = DBSCAN(eps=15, min_samples=50).fit(dark_points)
 ```
 
+The largest cluster of dark points corresponds to the tray. Any smaller clusters are most likely shadows or imaging artifacts and are discarded. This step ensures subsequent analysis operates only on the tray's actual pixel footprint.
+
 File: `optimize_phi_transient.py:164-193`
 
 ### Step 4: PCA
 
-Finds the principal axis of the clustered points:
+Finds the principal axis of the tray cluster. Because the tray can be oriented at any angle in the frame, PCA determines the dominant direction of the tray's pixel distribution:
 
 ```python
 cov_matrix = np.cov(centered_points.T)
@@ -58,7 +62,7 @@ eigenvalues, eigenvectors = np.linalg.eig(cov_matrix)
 principal_vector = eigenvectors[:, argmax(eigenvalues)]
 ```
 
-**Result**: Line equation `y = m_parallel * x + b_parallel` representing the tray's main axis.
+**Result**: Line equation `y = m_parallel * x + b_parallel` representing the tray's main axis. This axis is used to generate perpendicular sampling lines so that width measurements are always taken across the tray rather than along it.
 
 File: `optimize_phi_transient.py:199-220`
 
@@ -70,7 +74,7 @@ Creates evenly-spaced lines perpendicular to the tray axis:
 m_perpendicular = -1.0 / m_parallel
 ```
 
-Default: 5 perpendicular lines across the tray width.
+Default: 5 perpendicular lines across the tray width. Sampling along these lines produces intensity histograms (profiles) that capture the cross-sectional shape of the tray, from which the width is measured.
 
 File: `optimize_phi_transient.py:222-238`
 
@@ -85,6 +89,8 @@ For each perpendicular line:
    - Calculate second derivative (curvature)
    - Stop at points where curvature exceeds threshold
    - This detects the transition from flat trough to curved edge
+
+Since the physical tray has surface imperfections, the intensity profile is not a clean flat-bottomed trough. The transition from tray interior to tray edge is not always a sharp, smooth step, so boundary detection relies on curvature rather than a simple intensity cutoff.
 
 File: `optimize_phi_transient.py:244-358`
 
