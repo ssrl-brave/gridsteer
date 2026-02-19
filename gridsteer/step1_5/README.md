@@ -158,13 +158,13 @@ File: `find_radius.py:307-308`
 ### Basic Usage
 
 ```bash
-python -m gridsteer.step1_5.find_radius /path/to/frame.npz
+python -m gridsteer.step1_5.find_radius <path_to_frame.npz>
 ```
 
 ### With Visualization
 
 ```bash
-python -m gridsteer.step1_5.find_radius /path/to/frame.npz \
+python -m gridsteer.step1_5.find_radius <path_to_frame.npz> \
     --visualize-all \
     --verbose
 ```
@@ -172,8 +172,8 @@ python -m gridsteer.step1_5.find_radius /path/to/frame.npz \
 ### Custom Radius Range
 
 ```bash
-python -m gridsteer.step1_5.find_radius /path/to/frame.npz \
-    --min-radius 75 \
-    --max-radius 105 \
-    --radius-step 2
+python -m gridsteer.step1_5.find_radius <path_to_frame.npz> \
+    --min-radius <min_radius> \
+    --max-radius <max_radius> \
+    --radius-step <radius_step>
 ```
