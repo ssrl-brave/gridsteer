@@ -76,6 +76,8 @@ m_perpendicular = -1.0 / m_parallel
 
 Default: 5 perpendicular lines across the tray width. Sampling along these lines produces intensity histograms (profiles) that capture the cross-sectional shape of the tray, from which the width is measured.
 
+**Note:** The vertical lines are evenly spaced across the cluster’s x-pixel range, rather than along the length of the principal axis. Additionally, any lines that do not intersect dark pixels are skipped.
+
 File: `optimize_phi_transient.py:222-238`
 
 ### Step 6: Measure Width Along Each Line
