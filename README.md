@@ -27,7 +27,7 @@ Bridges Step 1 and Step 2: Step 2 requires a `target_radius` parameter to accura
 
 Processes a motor scan to detect and track all 19 wells across frames, assign consistent IDs, and learn the pixel-to-motor mapping via linear regression. Once calibrated, it predicts the motor position required to center any individual well.
 
-**Output**: JSON file with motor coordinates for each of the 19 wells
+**Output**: JSON file with motor coordinates for each of the 19 wells, and a pickle file (`calibration_model.pkl`) containing the trained calibration model, which can be loaded downstream to finetune the centering.
 
 ## Complete Workflow
 
