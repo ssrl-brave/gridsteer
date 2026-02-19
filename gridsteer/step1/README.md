@@ -176,15 +176,15 @@ python -m gridsteer.step1.optimize_phi /path/to/data --verbose
 ### With Custom Parameters
 
 ```bash
-python -m gridsteer.step1.optimize_phi /path/to/data \
-    --imgs_to_proc 50 \
+python -m gridsteer.step1.optimize_phi <path_to_data> \
+    --imgs_to_proc <num_images> \
     --verbose \
-    --output-dir ./phi_analysis
+    --output-dir <output_dir>
 ```
 
 ### Specify Frame Range
 
 ```bash
-python -m gridsteer.step1.optimize_phi /path/to/data \
-    --imgs_to_proc 100
+python -m gridsteer.step1.optimize_phi <path_to_data> \
+    --imgs_to_proc <num_images>
 ```
