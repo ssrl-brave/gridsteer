@@ -33,13 +33,13 @@ Processes a motor scan to detect and track all 19 wells across frames, assign co
 
 ```bash
 # Step 1: Find the optimal rotation angle
-python -m gridsteer.step1.optimize_phi /path/to/data --verbose
+python -m gridsteer.step1.optimize_phi <path_to_data>
 
 # Step 1.5: Estimate well radius from a representative frame
-python -m gridsteer.step1_5.find_radius /path/to/frame.npz
+python -m gridsteer.step1_5.find_radius <path_to_frame.npz>
 
 # Step 2: Track wells and produce centering motor positions
-python -m gridsteer.step2.main /path/to/frames --target_radius <radius> --outdir ./output
+python -m gridsteer.step2.main <path_to_data> --target_radius <radius> --outdir <output_dir>
 
 # Query a specific well
 python gridsteer/step2/read.py ./output <row> <column>
