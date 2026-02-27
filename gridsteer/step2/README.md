@@ -4,6 +4,12 @@
 
 This system processes image sequences to detect, track, and identify wells arranged in a staggered two-row configuration (9 wells in Row 1, 10 wells in Row 2). The system establishes well positions, tracks them across frames as the motor moves, and calibrates the relationship between pixel movements and motor movements to predict motor positions needed to center specific wells.
 
+The system makes the following assumptions about the tray layout:
+- Row 1 is on top with 9 wells (IDs 1–9)
+- Row 2 is on the bottom with 10 wells (IDs 10–19)
+- The two rows are staggered: each Row 1 well sits between two adjacent Row 2 wells
+- Frames start on the right side of the tray, so wells are encountered right-to-left as the stage scans
+
 ## System Architecture
 
 The codebase is organized into several modules:
@@ -46,7 +52,12 @@ The system detects circular wells in each frame:
 **Result**: List of detected circles with positions and radii
 
 #### Step 3: Optional Edge Detection (Default: Disabled)
-If edge detection is enabled, the system also:
+
+This feature was originally designed to detect the corner edge of the tray, signaling when the system should begin labeling wells. The idea: by finding a prominent non-horizontal edge line near a detected circle, the system could determine it had reached the tray boundary and could start assigning well IDs from that reference point.
+
+In practice, this turned out to be unnecessary. Frames typically start at the edge of the tray already, and during testing the tracking logic reliably assigns the correct labels without needing an explicit edge signal. Enabling edge detection adds computational overhead without improving accuracy — so it is disabled by default. When enabled, it runs only until the corner is found and is then automatically skipped for all remaining frames.
+
+If edge detection is enabled, the system performs the following:
 
 1. **Background Removal** (optional, if configured):
    - Uses rembg library to remove background noise
@@ -60,8 +71,8 @@ If edge detection is enabled, the system also:
 
 3. **Line Detection**:
    - Detects lines using Hough Line Transform
-   - Filters out horizontal lines (wells are arranged horizontally)
-   - Looks for non-horizontal edge lines
+   - Filters out horizontal lines
+   - Looks for non-horizontal edge lines (corresponding to the tray boundary for labeling)
    - File: `well_detection.py:69-158` (`LineDetector.detect_lines`)
 
 4. **Edge Condition Check**:
@@ -77,6 +88,8 @@ If edge detection is enabled, the system also:
 Once circles are detected, the system needs to determine which row each circle belongs to.
 
 #### Initial Learning Phase (K-Means Clustering)
+
+K-Means (K=2) is applied to determine whether one or two rows are currently visible in the frame. The algorithm always tries a two-cluster split, then validates whether the resulting clusters are actually far enough apart to represent distinct rows.
 
 1. **Cluster by Y-Coordinate**:
    - Uses K-Means clustering with K=2 to separate circles into two rows
@@ -126,21 +139,23 @@ Row 2:  o   o   o   o   o   o   o   o   o   o   (Wells 10-19)
 
 #### Identification Methods (in priority order)
 
+The algorithm prioritizes historical data when assigning labels to wells, as consistency across frames over time is more reliable than re-deriving labels from scratch each frame. Methods 1–2 draw on information from previous frames. When those fail, the system falls back to information from the current frame alone (Methods 3–5) to fill in any remaining unlabeled detections.
+
 **Method 1: Temporal Matching**
 - Match to the well ID from the previous frame based on closest distance
 - Validates against stagger constraints
 - File: `well_tracking.py:1085-1133` (`_find_best_temporal_match`)
 
-**Method 2: Stagger Relationship**
-- If one row has identified wells, use the stagger pattern to identify wells in the other row
+**Method 2: Spacing-Based Matching**
+- Uses established well spacing (median distance between adjacent wells)
+- Estimates position based on known wells from previous frames (`last_successful_row_wells`, `reference_frame_wells`, etc.)
+- File: `well_tracking.py:419-466` (`determine_well_id_from_spacing`)
+
+**Method 3: Stagger Relationship**
+- Uses already-identified wells from the current frame in the other row to infer IDs via the stagger pattern
 - For Row 1 well at column C: Should be between Row 2 wells at columns C and C+1
 - For Row 2 well at column C: Should be offset by half-spacing from Row 1
 - File: `well_tracking.py:270-340` (`WellIdentifier.identify_well_using_stagger`)
-
-**Method 3: Spacing-Based Matching**
-- Uses established well spacing (median distance between adjacent wells)
-- Estimates position based on known wells in the same row
-- File: `well_tracking.py:419-466` (`determine_well_id_from_spacing`)
 
 **Method 4: Spatial Consistency**
 - Uses already-identified wells in current frame to estimate ID
@@ -160,7 +175,7 @@ After assignment, the system validates that well positions are consistent with t
 
 ### Phase 4: Line Fitting and Tracking
 
-Once wells are identified in each row, the system fits a line to each row.
+Once wells are identified in each row, the system fits a line to each row. Together with the well spacing calculated in Phase 5, these line equations allow the system to predict the positions of wells that are not currently visible in the frame — for example, wells that have scrolled off-screen or are temporarily obscured.
 
 #### Fitting Lines to Rows
 
@@ -300,6 +315,18 @@ I tested 3 different models for learning the mapping, Linear Ridge Regression wo
 
 File: `motor_prediction.py:379-437` (`_train_models`)
 
+#### Model Persistence
+
+Once calibration is complete, the trained model is saved as a pickle file (`calibration_model.pkl`) in the output directory:
+
+```
+<output_dir>/calibration_model.pkl
+```
+
+This allows the calibration to be reloaded and used downstream — for example, to fine-tune the centering without re-running the full tracking pipeline.
+
+File: `well_tracking.py:772-777`, `motor_prediction.py:579-584` (`save_model`)
+
 ---
 
 ### Phase 8: Well Centering Predictions - Creating Output JSON File
@@ -309,9 +336,11 @@ Predict motor positions needed to center each well in the frame.
 #### Reference Frame Selection
 
 **When Established**:
-- After 2 rows are detected with multiple wells per row
-- System designates a "reference frame" with known motor position
+- The first frame where both rows have fitted line parameters (requiring at least `min_circles_per_row` detections per row, default: 2) is designated the reference frame
+- This frame's motor position is recorded as the origin for all subsequent motor predictions
 - File: `well_tracking.py:88-111` (`WellCenterTracker.update`)
+
+> **Important**: If no frame with at least 2 detected circles in each row is encountered, the reference frame is never established and the system cannot generate motor centering predictions.
 
 **Pixel Offset Calculation**:
 For each well detected in reference frame:
@@ -355,9 +384,10 @@ If `save_video=True`:
 
 ### Frame Images
 
-If `save_individual_frames=True`:
-- Saves each annotated frame as PNG
-- Useful for debugging and analysis
+The `save_individual_frames` variable in `main.py` controls debug frame output. If set to `True`:
+- Saves each annotated frame as a PNG image
+- Visualizations include detected circles, assigned well IDs, fitted row lines, predicted well positions, and motor/calibration status
+- Useful for understanding what the system sees at each step and diagnosing tracking issues
 
 ### Circle Detection
 - `target_radius`: Expected well radius in pixels (default: 85)
@@ -393,22 +423,22 @@ If `save_individual_frames=True`:
 ### Basic Usage
 
 ```bash
-python -m gridsteer.step2.main /path/to/data --verbose
+python -m gridsteer.step2.main <path_to_data>
 ```
 
 ### With Custom Parameters
 
 ```bash
-python -m gridsteer.step1.optimize_phi /path/to/data \
-    --imgs_to_proc 50 \
+python -m gridsteer.step1.optimize_phi <path_to_data> \
+    --imgs_to_proc <num_images> \
     --verbose \
-    --output-dir ./phi_analysis
+    --output-dir <output_dir>
 ```
 
 ### Specify Frame Range and Radius
 
 ```bash
-python -m gridsteer.step1.optimize_phi /path/to/data \
-    --imgs_to_proc 100 \
-    --target_radius 85
+python -m gridsteer.step1.optimize_phi <path_to_data> \
+    --imgs_to_proc <num_images> \
+    --target_radius <radius>
 ```
