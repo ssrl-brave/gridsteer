@@ -146,7 +146,7 @@ proc optCirc_start { dirname {n_passes 3}  {horiz_step 0.05} {vert_step 0.2} {sc
 
 	# Step 2: Call the circle map optimizer with detected radius
 	send_operation_update "Running the optimizer to map out circular wells in the grid ... "
-    set pyCmd "$pyExe -m gridsteer.step2.main $dirname --target_radius $detected_radius --outdir $dirname --verbose"
+    set pyCmd "$pyExe -m gridsteer.step2.main $dirname --target_radius $detected_radius --outdir $dirname"
 	send_operation_update "Debug log will be in $dirname/logs/"
 	send_operation_update "pyCmd: $pyCmd"
     set pyOut [eval exec $pyCmd]
