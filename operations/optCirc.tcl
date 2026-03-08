@@ -30,7 +30,7 @@ proc panSample_mm { horiz_mm vert_mm } {
 }
 
 
-proc zigZagScan { dirname {n_passes 3}  {horiz_step 0.05} {vert_step 0.2} } {
+proc zigZagScan { dirname {n_passes 3}  {horiz_step 0.05} {vert_step 0.2} {scan_height 2.5} } {
     # scans the sample in a zig zag pattern. Start this after align tip, with cursor
     # at the tip of the grid, at the center, in a face-on view. 
     # The sample will move such that the cursor travels towards the base along a zigzag.. 
@@ -45,13 +45,12 @@ proc zigZagScan { dirname {n_passes 3}  {horiz_step 0.05} {vert_step 0.2} } {
     variable gonio_phi
 
     set count 0
-    # roughly the grid width
-    set scan_height 2.5
     set vert_dir 1
     set horiz_dir -1
     
     # --- Initial Setup Move to upper corner from center---
-    panSample_mm 0.0 -1.25
+    set half_height [expr {$scan_height / 2.0}]
+    panSample_mm 0.0 [expr {-$half_height}]
         
     set horiz_incr [expr $horiz_dir * $horiz_step]
     
@@ -88,7 +87,7 @@ proc zigZagScan { dirname {n_passes 3}  {horiz_step 0.05} {vert_step 0.2} } {
 }
 
 
-proc optCirc_start { dirname {n_passes 3}  {horiz_step 0.05} {vert_step 0.2} } {
+proc optCirc_start { dirname {n_passes 3}  {horiz_step 0.05} {vert_step 0.2} {scan_height 2.5} } {
     # access the current motor positions
     variable sample_x
     variable sample_y
@@ -106,7 +105,7 @@ proc optCirc_start { dirname {n_passes 3}  {horiz_step 0.05} {vert_step 0.2} } {
     set start_z $sample_z
     set start_G $gonio_phi
 
-    zigZagScan $dirname $n_passes $horiz_step $vert_step
+    zigZagScan $dirname $n_passes $horiz_step $vert_step $scan_height
     
     ## reset the sample to starting position
     move sample_x to $start_x
@@ -147,9 +146,18 @@ proc optCirc_start { dirname {n_passes 3}  {horiz_step 0.05} {vert_step 0.2} } {
 
 	# Step 2: Call the circle map optimizer with detected radius
 	send_operation_update "Running the optimizer to map out circular wells in the grid ... "
-    set pyCmd "$pyExe -m gridsteer.step2.main $dirname --target_radius $detected_radius --outdir $dirname"
+    set pyCmd "$pyExe -m gridsteer.step2.main $dirname --target_radius $detected_radius --outdir $dirname --verbose"
+	send_operation_update "Debug log will be in $dirname/logs/"
 	send_operation_update "pyCmd: $pyCmd"
     set pyOut [eval exec $pyCmd]
+
+	# Verify mapping.json was produced (required by goCirc)
+	set mapping_file "$dirname/output_json_2/mapping.json"
+	if {![file exists $mapping_file]} {
+		send_operation_update "ERROR: mapping.json was not produced - motor calibration likely failed. Check $dirname/logs/"
+		return FAIL
+	}
+	send_operation_update "mapping.json ready at $mapping_file"
 
     return OK
 }
