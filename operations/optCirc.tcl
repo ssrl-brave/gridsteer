@@ -110,9 +110,22 @@ proc optCirc_start { dirname {n_passes 3}  {horiz_step 0.05} {vert_step 0.2} } {
     move gonio_phi to $start_G
     wait_for_devices sample_x sample_y sample_z gonio_phi
 
-	# Call the circle map optimizer
+	# Step 1.5: Auto-detect well radius from the first snapshot
+	send_operation_update "Detecting well radius from first snapshot ..."
+	set radiusCmd "$pyExe -m gridsteer.step1_5.find_radius $dirname/test0.npz --output-dir $dirname"
+	send_operation_update "radiusCmd: $radiusCmd"
+	set detected_radius [string trim [eval exec $radiusCmd]]
+	if {$detected_radius eq "NaN" || ![string is double $detected_radius]} {
+		send_operation_update "WARNING: radius detection failed (got '$detected_radius'), falling back to 115"
+		set detected_radius 115
+	} else {
+		set detected_radius [expr {int(round($detected_radius))}]
+		send_operation_update "Detected well radius: $detected_radius px"
+	}
+
+	# Step 2: Call the circle map optimizer with detected radius
 	send_operation_update "Running the optimizer to map out circular wells in the grid ... "
-    set pyCmd "$pyExe -m gridsteer.step2.main $dirname --target_radius 115 --outdir $dirname"
+    set pyCmd "$pyExe -m gridsteer.step2.main $dirname --target_radius $detected_radius --outdir $dirname"
 	send_operation_update "pyCmd: $pyCmd"
     set pyOut [eval exec $pyCmd]
 
