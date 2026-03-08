@@ -7,7 +7,18 @@ proc optCirc_initialize { } {
     set BLnum [regsub -all {BL|-} $beamlineID ""]
     send_operation_update "init optCirc for bl $BLnum"
     set pyExe "/home/blctl/miniforge/envs/blctl/bin/python"
-
+    global offaxis_url
+    global inline_url
+    if {[catch {set offaxis_url [::config getSnapshotDirectUrl]} err]} {
+            send_operation_update "Error fetching URL: $err"
+            set offaxis_url "unknown"
+        }
+    if {[catch {set inline_url [::config getSnapshotDirectInlineUrl]} err]} {
+            send_operation_update "Error fetching Inline URL: $err"
+            set inline_url "unknown"
+        }
+    send_operation_update "Offaxis camera feeding: $offaxis_url"
+    send_operation_update "Inline camera feeding: $inline_url"
 }
 
 proc panSample_mm { horiz_mm vert_mm } {
@@ -25,6 +36,8 @@ proc zigZagScan { dirname {n_passes 3}  {horiz_step 0.05} {vert_step 0.2} } {
     # The sample will move such that the cursor travels towards the base along a zigzag.. 
     global BLnum
     global pyExe
+    global offaxis_url
+    global inline_url
     send_operation_update "starting zigZag scan for BL=${BLnum}"
     variable sample_x
     variable sample_y
@@ -56,7 +69,7 @@ proc zigZagScan { dirname {n_passes 3}  {horiz_step 0.05} {vert_step 0.2} } {
         # Pan the sample: 
         panSample_mm $horiz_incr $vert_incr
 
-        set pyCmd "$pyExe -m gridsteer.snapshot $BLnum $dirname $sample_x $sample_y $sample_z $gonio_phi 0 $count"
+        set pyCmd "$pyExe -m gridsteer.snapshot $BLnum $dirname $sample_x $sample_y $sample_z $gonio_phi 0 $count -o $offaxis_url -i $inline_url"
         set pyOut [eval exec $pyCmd]
         #send_operation_update "got python output: =$pyOut"
         set count [expr $count+1]
@@ -99,7 +112,7 @@ proc optCirc_start { dirname {n_passes 3}  {horiz_step 0.05} {vert_step 0.2} } {
 
 	# Call the circle map optimizer
 	send_operation_update "Running the optimizer to map out circular wells in the grid ... "
-    set pyCmd "$pyExe -m gridsteer.step2.main $dirname --target_radius 85 --outdir $dirname"
+    set pyCmd "$pyExe -m gridsteer.step2.main $dirname --target_radius 115 --outdir $dirname"
 	send_operation_update "pyCmd: $pyCmd"
     set pyOut [eval exec $pyCmd]
 
