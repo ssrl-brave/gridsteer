@@ -11,6 +11,8 @@ parser.add_argument('z', type=float, help='Value for z')
 parser.add_argument('phi', type=float, help='Value for phi')
 parser.add_argument('dy', type=float, help='Value for dy')
 parser.add_argument('count', type=float, help='Value for count')
+parser.add_argument('-o', '--offaxis', type=str, help="camera url for the off-axis snapshot", default=None)
+parser.add_argument('-i', '--inline', type=str, help="camera url for the inline-axis snapshot", default=None)
 
 args = parser.parse_args()
 x = args.x
@@ -45,12 +47,18 @@ def img_from_url(url):
     print(f"Took {turl:.3f} sec for url and {timg-turl:.3f} sec for bytes to {img.shape} img conversion...")
     return img
 
-#cam1_url=URLS['video.snapshotOrigDirectUrl']
-cam1_url=URLS['video.snapshotDirectUrl']
+if args.offaxis is not None:
+    cam1_url = args.offaxis
+else:
+    cam1_url=URLS['video.snapshotDirectUrl']
 img1 = img_from_url(cam1_url)
-#cam2_url=URLS['video.snapshotOrigInlineDirectUrl']
-cam2_url=URLS['video.snapshotDirectInlineUrl']
+
+if args.inline is not None:
+    cam2_url =args.inline
+else:
+    cam2_url=URLS['video.snapshotDirectInlineUrl']
 img2 = img_from_url(cam2_url)
+
 print("scan %d:"%count, x,y,z,phi, dy)
 
 tnp = time.time()
