@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gridsteer"
+version = "0.1"
+dependencies = [
+    "h5py",
+    "scipy",
+    "matplotlib",
+    "scikit-image",
+    "opencv-python",
+    "imageio",
+    "numpy",
+    # "rembg[cpu]",  # or "rembg[gpu]" for GPU acceleration
+    "Pillow",
+    "scikit-learn",
+    "imageio",
+    "imageio-ffmpeg",
+]
+
+[project.optional-dependencies]
+rembg-cpu = ["rembg[cpu]"]
+rembg-gpu = ["rembg[gpu]"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["gridsteer*"]
+
+#[project.scripts]
+#"datsimx.sim" = "datsimx.mx_simulate:main"
