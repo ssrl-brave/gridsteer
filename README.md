@@ -1,14 +1,14 @@
 # GridSteer
 
-GridSteer automates crystallography sample tray alignment by determining the optimal phi angle, estimating well radius, and computing the motor positions needed to center any of the 19 wells on the tray.
+GridSteer automates crystallography sample tray alignment by determining the optimal phi angle and computing the motor positions needed to center any of the 19 wells on the tray.
 
 ## Pipeline Overview
 
-The system runs in three sequential stages:
+The system runs in two sequential stages:
 
 ```
-Step 1 --> Step 1.5 --> Step 2
-(phi)      (radius)     (motor positions)
+Step 1 --> Step 2
+(phi)      (motor positions)
 ```
 
 ### Step 1 — Phi Optimization (`gridsteer/step1`)
@@ -17,17 +17,11 @@ Determines the rotation angle (phi) at which the sample tray is face-on to the c
 
 **Output**: optimal `phi` angle (float)
 
-### Step 1.5 — Well Radius Estimation (`gridsteer/step1_5`)
+### Step 2 — Well Identification and Motor Calibration (`gridsteer/step2`)
 
-Bridges Step 1 and Step 2: Step 2 requires a `target_radius` parameter to accurately locate and track individual wells, and Step 1.5 finds that value. It estimates the radius of the wells in pixels by performing a radial sweep using the Hough Circle Transform, validates candidates against a two-row geometric constraint, and returns the median radius of the best-scoring result. Should be run on a frame with at least two circles in each row.
+Registers frames into a common tray coordinate system via SIFT + RANSAC homography, fuses them into a mosaic, and detects wells with a ring matched filter. Well radius, spacing, and rim width are all measured from the data — no manual tray geometry is needed beyond the expected well count per row. Undetected wells (from a truncated scan) are extrapolated from row geometry, and a linear ridge regression maps pixel positions to motor coordinates for centering any well.
 
-**Output**: well radius in pixels (float)
-
-### Step 2 — Well Tracking and Motor Calibration (`gridsteer/step2`)
-
-Processes a motor scan to detect and track all 19 wells across frames, assign consistent IDs, and learn the pixel-to-motor mapping via linear regression. Once calibrated, it predicts the motor position required to center any individual well.
-
-**Output**: JSON file with motor coordinates for each of the 19 wells, and a pickle file (`calibration_model.pkl`) containing the trained calibration model, which can be loaded downstream to finetune the centering.
+**Output**: JSON file with motor coordinates for each of the 19 wells
 
 ## Complete Workflow
 
@@ -35,14 +29,12 @@ Processes a motor scan to detect and track all 19 wells across frames, assign co
 # Step 1: Find the optimal rotation angle
 python -m gridsteer.step1.optimize_phi <path_to_data>
 
-# Step 1.5: Estimate well radius from a representative frame
-python -m gridsteer.step1_5.find_radius <path_to_frame.npz>
+# Step 2: Identify wells and produce centering motor positions
+python -m gridsteer.step2.map_wells <path_to_data> --out <output_dir>
 
-# Step 2: Track wells and produce centering motor positions
-python -m gridsteer.step2.main <path_to_data> --target_radius <radius> --outdir <output_dir>
-
-# Query a specific well
-python gridsteer/step2/read.py ./output <row> <column>
+# Check predictions against recorded frames
+python -m gridsteer.step2.check_predictions \
+    <output_dir>/<dataset>/well_centering_positions.json <path_to_data>
 ```
 
 ## Data Format
@@ -58,16 +50,11 @@ gridsteer/
 │   │   ├── optimize_phi.py         # Controller: iterates frames, tracks best result
 │   │   ├── optimize_phi_transient.py  # Analyzer: measures tray width for a single frame
 │   │   └── Old/                    # Previous approaches (line-finding, Hough)
-│   ├── step1_5/                # Well radius estimation
-│   │   └── find_radius.py          # Radial sweep + Hough circle detection
-│   └── step2/                  # Well tracking and motor calibration
-│       ├── main.py                 # Entry point and orchestration
-│       ├── well_detection.py       # Hough circle and line detection
-│       ├── well_tracking.py        # Well ID assignment and tracking across frames
-│       ├── motor_prediction.py     # Pixel-to-motor calibration and prediction
-│       ├── visualization.py        # Frame annotation and video output
-│       ├── read.py                 # Query motor positions from JSON output
-│       └── test_predictions.py     # Validation tool
+│   └── step2/                  # Well identification and motor calibration
+│       ├── map_wells.py             # Main entry point: registration, mosaic, detection, tracking
+│       ├── predict_wells.py        # Geometry helper: extrapolates wells, fits motor mapping
+│       ├── check_predictions.py    # Validation: compares predictions against recorded frames
+│       └── read.py                 # Query motor positions from JSON output
 └── pyproject.toml
 ```
 
@@ -76,5 +63,4 @@ gridsteer/
 Each step has its own README with implementation details, configuration parameters, and usage examples:
 
 - [`gridsteer/step1/README.md`](gridsteer/step1/README.md)
-- [`gridsteer/step1_5/README.md`](gridsteer/step1_5/README.md)
 - [`gridsteer/step2/README.md`](gridsteer/step2/README.md)
