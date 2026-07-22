@@ -543,7 +543,7 @@ def control_locations(valid, peaks, r_star, n_controls, rng_seed=0):
     return np.stack([ys[idx], xs[idx]], axis=1)
 
 
-def detect_wells_disk(mosaic, count, candidate_frac=0.25, alpha=0.01,
+def detect_wells_disk(mosaic, count, candidate_frac=0.25, alpha=0.05,
                       n_controls=500):
     """Disk matched filter on the smoothness (inverted texture) map.
 
@@ -552,18 +552,26 @@ def detect_wells_disk(mosaic, count, candidate_frac=0.25, alpha=0.01,
     has large-scale structure (contiguous speckle and off-tray regions)
     that inflates the MAD past real well scores.
 
-    Acceptance is instead a rank test against measured background.
-    Three statistics describe a dark dome well -- smooth interior,
-    rough exterior ring, interior darker than its surround -- computed
-    both at candidates and at random control locations
-    (control_locations). No single axis separates wells from
-    background (off-tray regions are smooth inside, speckle is rough
-    outside, shadow bands out-contrast a well), so the test statistic
-    is the WORST per-axis exceedance -- T(x) = max_k frac{controls
-    whose stat k beats x's} -- calibrated against the controls' own T
+    Acceptance is a rank test against measured background, over the
+    two texture statistics of a dark dome well -- a smooth interior of
+    the measured radius and a rough (speckled) exterior ring -- both
+    self-normalized against the mosaic's own texture median, so
+    lighting level and defocus cancel out. Neither axis alone
+    separates wells from background (off-tray regions are smooth
+    inside, speckle is rough outside), so the test statistic is the
+    WORST per-axis exceedance -- T(x) = max_k frac{controls whose stat
+    k beats x's} -- calibrated against the controls' own T
     distribution (Westfall-Young min-p): a candidate is kept when at
-    most a fraction alpha of controls look as jointly well-like as it
-    does. alpha is the only acceptance knob.
+    most a fraction alpha of background looks as jointly well-like as
+    it does. alpha is the only acceptance knob.
+
+    Intensity contrast is deliberately NOT a ranked axis: its
+    magnitude is the one environment-dependent quantity here (shadow
+    bands and defocus shift it, and tray-edge shadow bands measured as
+    controls out-contrast real wells, poisoning the null). Its sign,
+    though, is the physical definition of the dark dome this detector
+    targets, so "interior darker than its surround" is kept as a hard
+    gate with no magnitude to tune.
     """
     from skimage.feature import peak_local_max
     from skimage.filters import gaussian
@@ -605,17 +613,21 @@ def detect_wells_disk(mosaic, count, candidate_frac=0.25, alpha=0.01,
     if len(null) < 2:
         return [], r_star  # nothing to calibrate against: fail closed
 
-    # Each control's worst-axis exceedance vs the other controls: the
+    # Each control's worst-axis exceedance vs the other controls (over
+    # the two texture axes; column 2 is the sign-gated contrast): the
     # null distribution of T, capturing how jointly well-like random
     # background ever gets (including axis correlations).
-    exceed = (null[None, :, :] > null[:, None, :]).sum(axis=1)
-    t_null = (exceed / (len(null) - 1)).max(axis=1)
+    tex_null = null[:, :2]
+    exceed = (tex_null[None, :, :] > tex_null[:, None, :]).sum(axis=1)
+    t_null = (exceed / (len(tex_null) - 1)).max(axis=1)
 
     wells = []
     for py, px in peaks:
         s = np.array(disk_stats(py, px))
-        t = float((null > s).mean(axis=0).max())
-        p = (1 + int((t_null <= t).sum())) / (len(null) + 1)
+        if s[2] <= 0:
+            continue  # interior not darker than its surround: not a dark dome
+        t = float((tex_null > s[:2]).mean(axis=0).max())
+        p = (1 + int((t_null <= t).sum())) / (len(tex_null) + 1)
         if p > alpha:
             continue
         # completeness here reports the smooth fraction of the interior,
@@ -627,7 +639,16 @@ def detect_wells_disk(mosaic, count, candidate_frac=0.25, alpha=0.01,
 
 
 def label_wells(wells, r_star):
-    """Row/column labels in tray coordinates (stable across the sequence)."""
+    """Row/column labels in tray coordinates (stable across the sequence).
+
+    Wells cluster into rows by y-coordinate, but which cluster is Row 1
+    and which is Row 2 is not decided by vertical order (Row 1 is no
+    longer guaranteed to sit above Row 2). The rows are staggered, with
+    the Row 1 wells nested between the Row 2 wells, so Row 2 reaches
+    farther out and owns the rightmost well of the tray. Rows are
+    therefore numbered by how far right they extend -- the row holding
+    the rightmost well is Row 2 -- and the inner row is Row 1.
+    """
     wells = sorted(wells, key=lambda w: w["cy"])
     rows, current = [], [wells[0]]
     for w in wells[1:]:
@@ -637,6 +658,9 @@ def label_wells(wells, r_star):
             rows.append(current)
             current = [w]
     rows.append(current)
+    # Order rows by their outward (rightmost) reach rather than by height:
+    # the staggered outer row owning the tray's rightmost well is Row 2.
+    rows.sort(key=lambda row: max(w["cx"] for w in row))
     out = []
     for ri, row in enumerate(rows):
         # columns are numbered right-to-left: the rightmost well is C1
