@@ -2,21 +2,19 @@
 """
 Check predicted well-centering positions against the recorded frames.
 
-Reads well_centering_positions.json (produced by map_wells.py) and,
-for each well's predicted motor position, finds the frame whose recorded
-stage coordinates (x, y, z) are closest. A well predicted correctly
-should appear near the center of its closest frame -- if that frame was
-taken near the predicted position at all (see the distance in the title).
+For each well in well_centering_positions.json (from map_wells.py),
+finds the frame with the closest recorded stage coordinates (x, y, z).
+A well predicted correctly should appear near the center of its
+closest frame -- if a frame was taken near that position at all (see
+the distance in the panel title).
 
 Usage:
-    python scripts/check_predictions.py \
+    python -m gridsteer.step2.check_predictions \
         output_tracks/mapper15/well_centering_positions.json data/mapper15
 
 Outputs (next to the input JSON by default):
-    closest_frames.png    montage: each well's closest frame, with a
+    closest_frames.png    one panel per well: its closest frame with a
                           center crosshair and the motor distance
-
-Dependencies: numpy, matplotlib.
 """
 
 import argparse
@@ -45,13 +43,14 @@ def load_frame_positions(data_dir: Path, key: str = "sample"):
     return frames, np.array(positions), [f.name for f in files]
 
 
-def closest_frames(wells, positions):
-    """For each well, the index of and distance to the nearest frame.
+def by_row_col(wells):
+    """Well keys in reading order, shared by the montage and the report."""
+    return sorted(wells, key=lambda k: (wells[k]["row"], wells[k]["column"]))
 
-    Distance is euclidean over the (x, y, z) motor coordinates between
-    the well's predicted centering position and each frame's recorded
-    stage position.
-    """
+
+def closest_frames(wells, positions):
+    """For each well, (index, distance) of the nearest frame by
+    euclidean distance over the (x, y, z) motor coordinates."""
     out = {}
     for label, w in wells.items():
         p = w["motor_position"]
@@ -68,11 +67,11 @@ def save_montage(wells, matches, frames, names, path):
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    order = sorted(wells, key=lambda k: (wells[k]["row"], wells[k]["column"]))
+    order = by_row_col(wells)
     ncol = min(5, len(order))
     nrow = int(np.ceil(len(order) / ncol))
     h, w = frames[0].shape[:2]
-    # 0.8in per row of headroom for the two-line panel titles
+    # 0.8in per row of headroom for the two-line panel titles.
     fig, axes = plt.subplots(nrow, ncol,
                              figsize=(3.2 * ncol, (3.2 * h / w + 0.8) * nrow))
     axes = np.atleast_1d(axes).ravel()
@@ -116,7 +115,7 @@ def main():
 
     matches = closest_frames(wells, positions)
 
-    for key in sorted(wells, key=lambda k: (wells[k]["row"], wells[k]["column"])):
+    for key in by_row_col(wells):
         well = wells[key]
         i, dist = matches[key]
         tag = "Predicted" if well["predicted"] else "Detected "

@@ -1,35 +1,27 @@
 #!/usr/bin/env python3
 """
-Identify the wells of a moving tray: segment, label, track, and report pose.
+Identify the wells of a moving tray: register the frames, fuse a mosaic,
+detect and label wells, track them per frame, and compute the motor
+coordinates that center each well. See the step2 README for the full
+pipeline description.
 
-Pipeline:
-  1. Register frames into a common tray frame (SIFT + RANSAC homography),
-     validated/bridged against the recorded stage trajectory.
-  2. Fuse the aligned frames into a per-pixel temporal median mosaic.
-  3. Detect wells on the mosaic with a ring matched filter (radius
-     measured, not supplied); falls back to a disk filter on local
-     smoothness for trays with no rim to match (see detect_wells_disk).
-  4. Label wells by row/column; wells outside the scanned area are
-     extrapolated from the row geometry (see predict_wells.py).
-  5. Track each well by projecting its tray position through the
-     inverse of each frame's homography.
-  6. Report per-frame planar pose (rotation, scale, translation, tilt).
+Detection matches the whole known well layout as one constellation
+(well_template.py, the default); --no-template runs the legacy per-well
+ring detector followed by row extrapolation (predict_wells.py).
 
 Usage:
     python -m gridsteer.step2.map_wells data/mapper15 --out output_tracks
 
 Outputs (in <out>/<dataset-name>/):
-    mosaic_labeled.png   fused mosaic with detected (solid) and
-                         predicted (dashed) wells
+    mosaic_labeled.png   mosaic with detected (solid) and predicted
+                         (dashed) wells
     frames_overlay.png   montage of frames with projected well tracks
     tracks.csv           frame, well id, x, y, radius, visibility
     pose.csv             per-frame planar pose parameters
-    wells.json           well positions/radii, detected + extrapolated
+    wells.json           well positions/radii in tray coordinates;
+                         "observed" separates detections from predictions
     well_centering_positions.json
-                         absolute motor coordinates that center each
-                         well in the frame (see predict_wells.py)
-
-Dependencies: numpy, opencv-python, scikit-image, matplotlib.
+                         absolute motor coordinates that center each well
 """
 
 import argparse
@@ -38,6 +30,7 @@ import json
 import os
 import re
 import sys
+import warnings
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
@@ -45,7 +38,10 @@ import cv2
 import numpy as np
 
 from .predict_wells import (predict_missing_wells, fit_motor_pixel_map,
-                            motor_centering_positions)
+                            motor_centering_positions, row_col,
+                            stage_metadata_issue)
+from .well_template import (DEFAULT_TEMPLATE_PATH, load_template,
+                            match_layout)
 
 
 # --------------------------------------------------------------------------
@@ -76,11 +72,10 @@ def load_frames(data_dir: Path, key: str = "sample"):
 # --------------------------------------------------------------------------
 
 def match_pairs(frames):
-    """SIFT+RANSAC homography for every consecutive pair.
+    """SIFT+RANSAC homography (frame t -> t-1) for each consecutive pair.
 
-    Returns a list of (H, n_inliers) with H mapping frame-t pixels to
-    frame-(t-1), or (None, n) if matching failed. Weak pairs are kept;
-    apply_trajectory() decides whether to bridge them.
+    Returns a list of (H, n_inliers), H being None when matching failed.
+    Weak pairs are kept; apply_trajectory() decides whether to bridge.
     """
     sift = cv2.SIFT_create()
     matcher = cv2.BFMatcher(cv2.NORM_L2, crossCheck=True)
@@ -109,11 +104,10 @@ def match_pairs(frames):
 def fit_stage_map(dstage, dpix, healthy, tol=3.0, iters=300):
     """RANSAC fit of pixel motion vs stage motion (dpix ~ dstage @ A).
 
-    3-pair consensus subsets survive outliers a single least-squares
-    fit would not. tol sits between calibration accuracy (~1-2px) and
-    the aliasing errors this catches (a well pitch, hundreds of px).
-    Returns (A, median_residual_px), or (None, None) with < 3 healthy
-    pairs.
+    tol sits between the ~1-2px calibration accuracy and the aliasing
+    errors this catches (a well pitch, hundreds of px); rcond keeps
+    collinear scans at a minimum-norm fit. Returns
+    (A, median_residual_px), or (None, None) with < 3 healthy pairs.
     """
     idx = np.where(healthy)[0]
     if len(idx) < 3:
@@ -135,8 +129,8 @@ def fit_stage_map(dstage, dpix, healthy, tol=3.0, iters=300):
 
 
 def ecc_refine(frames, t, seed_txy):
-    """Refine a predicted pair translation with ECC, seeded ~2px from
-    the answer. Returns a 3x3 H (frame-t -> frame-(t-1)) or None."""
+    """Refine a predicted pair translation with ECC.
+    Returns a 3x3 H (frame-t -> frame-(t-1)) or None."""
     warp = np.array([[1, 0, seed_txy[0]], [0, 1, seed_txy[1]]], np.float32)
     crit = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 100, 1e-5)
     try:
@@ -151,24 +145,16 @@ def ecc_refine(frames, t, seed_txy):
 def apply_trajectory(pairs, frames, meta, min_inliers):
     """Validate/bridge pairwise transforms against the stage trajectory.
 
-    Each image-derived transform is checked against a stage-to-pixel
-    fit: agreeing pairs pass through, weak pairs (defocus) are bridged
-    with the prediction + ECC refinement, and confident-but-contradicting
-    pairs (well-lattice aliasing) are rejected and rebuilt the same way.
-
-    Returns (pairs, report). Without usable metadata (absent keys, < 3
-    healthy pairs, or varying phi), pairs are returned unchanged.
+    Agreeing pairs pass through; weak pairs (defocus) are bridged with
+    the stage prediction + ECC; confident-but-contradicting pairs
+    (well-lattice aliasing) are rejected and rebuilt the same way.
+    Returns (pairs, report); without usable metadata, pairs are
+    returned unchanged.
     """
     report = {"calibrated": False, "residual_px": None,
               "bridged": [], "rejected": []}
 
-    have_meta = meta and all(
-        all(k in m for k in ("x", "y", "z")) for m in meta)
-    # Varying phi means stage-driven rotation, which the
-    # translation-only calibration cannot model.
-    phis = [m.get("phi", 0.0) for m in meta] if meta else []
-    phi_varies = phis and (max(phis) - min(phis)) > 1e-6
-    if not have_meta or phi_varies:
+    if stage_metadata_issue(meta):
         return pairs, report
 
     dstage = np.diff(np.array([[m["x"], m["y"], m["z"]] for m in meta]), axis=0)
@@ -179,12 +165,13 @@ def apply_trajectory(pairs, frames, meta, min_inliers):
     A, resid = fit_stage_map(dstage, dpix, healthy)
     if A is None:
         return pairs, report
-    report.update(calibrated=True, residual_px=round(resid, 2))
+    # The in-plane gain |dpix|/|dstage_xy| tracks the image zoom, so it
+    # doubles as a template-free scale prior for detection.
+    report.update(calibrated=True, residual_px=round(resid, 2),
+                  stage_gain=round(float(np.linalg.norm(A[:2])), 2))
 
     pred = dstage @ A
-    # 10x the fit residual (floored at 10px) sits between the ~2px
-    # calibration accuracy and the smallest aliasing jump (one well
-    # pitch, hundreds of px).
+    # Between the ~2px calibration accuracy and one-well-pitch aliasing jumps.
     threshold = max(10.0, 10 * resid)
 
     out = []
@@ -243,9 +230,7 @@ def mosaic_transforms(frames, Hs):
     mn, mx = corners.min(axis=0), corners.max(axis=0)
     T = np.array([[1, 0, -mn[0]], [0, 1, -mn[1]], [0, 0, 1.0]])
     size = np.ceil(mx - mn).astype(int) + 1  # (w, h)
-    # Memory rail: the aligned float32 stack must fit in available
-    # memory. A runaway canvas almost always means a bad homography
-    # flung a frame's corners far away.
+    # Memory rail: a runaway canvas almost always means a bad homography.
     need = (len(frames) + 2) * int(size[0]) * int(size[1]) * 4
     avail = available_memory()
     if avail is not None and need > avail:
@@ -262,17 +247,15 @@ def build_mosaic(frames, Gs, canvas_shape):
     h, w = canvas_shape
     stack = np.full((len(frames), h, w), np.nan, np.float32)
     for t, (f, G) in enumerate(zip(frames, Gs)):
-        warped = cv2.warpPerspective(
+        stack[t] = cv2.warpPerspective(
             f.astype(np.float32), G.astype(np.float64), (w, h),
             flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT,
             borderValue=float("nan"))
-        stack[t] = warped
     count = (~np.isnan(stack)).sum(axis=0)
-    with np.errstate(all="ignore"):
-        import warnings
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", RuntimeWarning)
-            mosaic = np.nanmedian(stack, axis=0)
+    # Unobserved pixels are all-NaN stacks; silence nanmedian's warning.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        mosaic = np.nanmedian(stack, axis=0)
     return mosaic, count
 
 
@@ -297,9 +280,8 @@ SMOOTH_SIGMA = 2.0  # pre-detection Gaussian; pure noise suppression
 def ring_template(r: float, thickness: float = None, pad: int = None):
     """Zero-mean annulus template.
 
-    Without an explicit thickness/pad this builds a blur-limited thin
-    ring used only to bootstrap-measure the radius and rim width;
-    detection then re-runs with the measured values.
+    Defaults build a blur-limited thin ring used to bootstrap-measure
+    the radius and rim width; detection re-runs with measured values.
     """
     if thickness is None:
         thickness = 3 * SMOOTH_SIGMA
@@ -312,13 +294,12 @@ def ring_template(r: float, thickness: float = None, pad: int = None):
     return t - t.mean()
 
 
-def _ncc(image, template, valid=None):
-    """NCC response, sanitized against numerically degenerate regions.
+def _ncc(image, template, valid):
+    """NCC response with degenerate regions zeroed.
 
-    Flat areas (unobserved canvas, warp borders) have ~zero local
-    variance, so NCC divides by ~0 and produces garbage peaks. The
-    response is zeroed where the window is mostly unobserved, local
-    variance is negligible, or |NCC| exceeds its bound of 1.
+    Flat areas (unobserved canvas, warp borders) have ~zero variance
+    and produce garbage peaks; the response is zeroed where the window
+    is mostly unobserved, variance is negligible, or |NCC| > 1.
     """
     from skimage.feature import match_template
     resp = match_template(image, template, pad_input=True)
@@ -329,46 +310,31 @@ def _ncc(image, template, valid=None):
     floor = (0.01 * float(image.std())) ** 2
     resp[local_var < floor] = 0.0
     resp[np.abs(resp) > 1.0] = 0.0
-    if valid is not None:
-        support = cv2.boxFilter(valid.astype(np.float32), -1, (n, n))
-        resp[support < 0.5] = 0.0
+    support = cv2.boxFilter(valid.astype(np.float32), -1, (n, n))
+    resp[support < 0.5] = 0.0
     return resp
 
 
-def measure_radius(inv, valid=None, r_min=50, r_max=200, step=5,
-                   template_fn=None):
+def measure_radius(inv, valid, r_min=50, r_max=200, step=5):
     """1-D sweep: the well radius is measured from the data, not supplied."""
-    if template_fn is None:
-        template_fn = ring_template
-
-    def fits(t):
-        # match_template requires image >= template in every dimension
-        return t.shape[0] <= inv.shape[0] and t.shape[1] <= inv.shape[1]
-
     best_r, best_v = r_min, -np.inf
     for r in range(r_min, r_max + 1, step):
-        t = template_fn(r)
-        if not fits(t):
-            break  # template outgrew the mosaic; larger r won't fit either
-        v = _ncc(inv, t, valid).max()
+        v = _ncc(inv, ring_template(r), valid).max()
         if v > best_v:
             best_r, best_v = r, v
     # refine around the coarse winner
     for r in range(best_r - step + 1, best_r + step):
         if r <= 0:
             continue
-        t = template_fn(r)
-        if not fits(t):
-            break
-        v = _ncc(inv, t, valid).max()
+        v = _ncc(inv, ring_template(r), valid).max()
         if v > best_v:
             best_r, best_v = r, v
     return best_r
 
 
-def measure_rim_width(smooth, inv, r_star, valid=None):
-    """Rim thickness measured from the data: the FWHM of the dark rim
-    trough in the radial profile around the strongest ring response."""
+def measure_rim_width(smooth, inv, r_star, valid):
+    """Rim thickness: FWHM of the dark rim trough in the radial profile
+    around the strongest ring response."""
     resp = _ncc(inv, ring_template(r_star), valid)
     py, px = np.unravel_index(np.nanargmax(resp), resp.shape)
     rs = np.arange(max(1.0, 0.5 * r_star), 1.5 * r_star, 1.0)
@@ -403,8 +369,7 @@ def rim_stats(img, cy, cx, r, n_theta=360):
 
     contrast: interior brightness minus mean rim brightness.
     completeness: fraction of rim angles darker than the interior by
-    at least half the contrast -- ~1.0 for a closed rim, low for
-    arcs/edges mimicking part of a circle.
+    half the contrast -- ~1.0 for a closed rim, low for partial arcs.
     """
     th = np.linspace(0, 2 * np.pi, n_theta, endpoint=False)
     ys = np.round(cy + r * np.sin(th)).astype(int)
@@ -437,9 +402,8 @@ def detect_wells(mosaic, count, core_frac=0.5, candidate_frac=0.25,
     r_star = measure_radius(inv, valid)
     rim_w = measure_rim_width(smooth, inv, r_star, valid)
 
-    # Fine sweep +/- rim_w/4 around the measured radius: the template
-    # tolerates ~rim_w/2 of mismatch, and exact per-well radii are
-    # re-measured from the radial profile below.
+    # Fine sweep +/- rim_w/4; exact per-well radii are re-measured from
+    # the radial profile below.
     step = max(1.0, rim_w / 8)
     best, best_r = None, None
     for r in np.arange(r_star - rim_w / 4, r_star + rim_w / 4 + step / 2, step):
@@ -451,9 +415,8 @@ def detect_wells(mosaic, count, core_frac=0.5, candidate_frac=0.25,
             best[upd] = resp[upd]
             best_r[upd] = r
 
-    # Suppression radius must stay below 2*r (the closest two centers
-    # can be) but above ~1*r (duplicate peaks of one well); 1.5*r is
-    # mid-interval.
+    # Suppression radius between ~1*r (duplicate peaks of one well) and
+    # 2*r (the closest two centers can be).
     peaks = peak_local_max(best, min_distance=int(1.5 * r_star),
                            threshold_abs=candidate_frac * best.max(),
                            exclude_border=False)
@@ -469,186 +432,27 @@ def detect_wells(mosaic, count, core_frac=0.5, candidate_frac=0.25,
                         score=float(best[py, px]),
                         contrast=contrast, completeness=completeness))
 
-    # Null-hypothesis gate: extreme-value statistics predicts the max
-    # NCC a noise-only field produces (median + sqrt(2 ln N) sigma via
-    # MAD). Real wells score >=2x that ceiling; requiring 1.5x makes
-    # "zero wells" a possible answer.
+    # Null-hypothesis gate: extreme-value statistics bounds the max NCC
+    # of pure noise; requiring 1.5x that makes "zero wells" possible.
     med = float(np.median(best[valid]))
     mad = float(np.median(np.abs(best[valid] - med)))
     null_max = med + np.sqrt(2 * np.log(max(int(valid.sum()), 2))) * 1.4826 * mad
 
-    core = [w for w in raw if w["score"] >= core_frac * best.max()
+    strong = core_frac * best.max()
+    core = [w for w in raw if w["score"] >= strong
             and w["score"] >= 1.5 * null_max]
     if not core:
         return [], r_star, rim_w
     min_contrast = contrast_frac * float(np.median([w["contrast"] for w in core]))
     wells = [w for w in raw
-             if w["score"] >= core_frac * best.max()
+             if w["score"] >= strong
              or (w["completeness"] >= min_completeness
                  and w["contrast"] >= min_contrast)]
     return wells, r_star, rim_w
 
 
-# --------------------------------------------------------------------------
-# Fallback detection: smooth-dark-disk matched filter
-#
-# Some trays image as filled dark domes with no rim for the ring filter
-# to find, and dome shading overlaps the substrate's intensity range, so
-# neither the ring template nor a global threshold works. What separates
-# these wells is texture: the dome is locally smooth, the substrate is
-# speckled.
-# --------------------------------------------------------------------------
-
-def disk_template(r: float, pad: int = None):
-    """Zero-mean filled-disk template (the well is a region, not a rim)."""
-    if pad is None:
-        # Enough surround for the zero-mean template to punish regions
-        # larger than a well, without doubling the template size.
-        pad = max(int(0.4 * r), int(3 * SMOOTH_SIGMA))
-    n = int(r + pad)
-    yy, xx = np.mgrid[-n:n + 1, -n:n + 1]
-    t = (np.hypot(yy, xx) <= r).astype(np.float32)
-    return t - t.mean()
-
-
-def texture_map(mosaic, valid, window=9):
-    """Local standard deviation. The window tracks the speckle grain
-    scale (a few pixels), not the well size, so no sweep is needed."""
-    img = np.where(valid, mosaic, float(np.nanmedian(mosaic))).astype(np.float32)
-    m1 = cv2.boxFilter(img, -1, (window, window))
-    m2 = cv2.boxFilter(img * img, -1, (window, window))
-    return np.sqrt(np.maximum(m2 - m1 * m1, 0.0))
-
-
-def control_locations(valid, peaks, r_star, n_controls, rng_seed=0):
-    """Random probe centers representing the background null.
-
-    Controls obey the same >=50% observed-support rule as _ncc, and
-    stay 1.5*r away from every candidate so the null isn't contaminated
-    by the locations under test. Seed fixed for reproducibility.
-    """
-    n = disk_template(r_star).shape[0]
-    support = cv2.boxFilter(valid.astype(np.float32), -1, (n, n))
-    yy, xx = np.mgrid[0:valid.shape[0], 0:valid.shape[1]]
-    allowed = support >= 0.5
-    for py, px in peaks:
-        allowed &= np.hypot(yy - py, xx - px) > 1.5 * r_star
-    if not allowed.any():
-        allowed = support >= 0.5  # degenerate mosaic: candidates cover it
-    ys, xs = np.nonzero(allowed)
-    if len(ys) == 0:
-        return np.empty((0, 2), int)
-    rng = np.random.default_rng(rng_seed)
-    idx = rng.choice(len(ys), size=n_controls, replace=len(ys) < n_controls)
-    return np.stack([ys[idx], xs[idx]], axis=1)
-
-
-def detect_wells_disk(mosaic, count, candidate_frac=0.25, alpha=0.05,
-                      n_controls=500):
-    """Disk matched filter on the smoothness (inverted texture) map.
-
-    All wells share one radius, measured by the same 1-D sweep as the
-    ring path. There's no MAD-based null gate here: the smoothness map
-    has large-scale structure (contiguous speckle and off-tray regions)
-    that inflates the MAD past real well scores.
-
-    Acceptance is a rank test against measured background, over the
-    two texture statistics of a dark dome well -- a smooth interior of
-    the measured radius and a rough (speckled) exterior ring -- both
-    self-normalized against the mosaic's own texture median, so
-    lighting level and defocus cancel out. Neither axis alone
-    separates wells from background (off-tray regions are smooth
-    inside, speckle is rough outside), so the test statistic is the
-    WORST per-axis exceedance -- T(x) = max_k frac{controls whose stat
-    k beats x's} -- calibrated against the controls' own T
-    distribution (Westfall-Young min-p): a candidate is kept when at
-    most a fraction alpha of background looks as jointly well-like as
-    it does. alpha is the only acceptance knob.
-
-    Intensity contrast is deliberately NOT a ranked axis: its
-    magnitude is the one environment-dependent quantity here (shadow
-    bands and defocus shift it, and tray-edge shadow bands measured as
-    controls out-contrast real wells, poisoning the null). Its sign,
-    though, is the physical definition of the dark dome this detector
-    targets, so "interior darker than its surround" is kept as a hard
-    gate with no magnitude to tune.
-    """
-    from skimage.feature import peak_local_max
-    from skimage.filters import gaussian
-
-    valid = count > 0
-    tex = texture_map(mosaic, valid)
-    smoothness = gaussian(-tex, SMOOTH_SIGMA)
-    smooth = gaussian(np.where(valid, mosaic, np.nanmax(mosaic)), SMOOTH_SIGMA)
-
-    r_star = measure_radius(smoothness, valid, template_fn=disk_template)
-    resp = _ncc(smoothness, disk_template(r_star), valid)
-    if resp.max() <= 0:
-        return [], r_star
-
-    peaks = peak_local_max(resp, min_distance=int(1.5 * r_star),
-                           threshold_abs=candidate_frac * resp.max(),
-                           exclude_border=False)
-
-    # The smallest reachable p-value is 1/(n_controls+1); make sure it
-    # can actually clear alpha.
-    n_controls = max(n_controls, int(np.ceil(1.0 / alpha)))
-
-    tex_median = float(np.median(tex[valid]))
-    inner = np.arange(2, 0.8 * r_star, 3)
-    outer = np.arange(1.15 * r_star, 1.35 * r_star, 3)
-
-    def disk_stats(cy, cx):
-        """(interior smooth fraction, exterior rough fraction,
-        surround-minus-interior intensity contrast)."""
-        return (float(np.nanmean(radial_profile(tex, cy, cx, inner)
-                                 < tex_median)),
-                float(np.nanmean(radial_profile(tex, cy, cx, outer)
-                                 > tex_median)),
-                float(np.nanmean(radial_profile(smooth, cy, cx, outer))
-                      - np.nanmean(radial_profile(smooth, cy, cx, inner))))
-
-    controls = control_locations(valid, peaks, r_star, n_controls)
-    null = np.array([disk_stats(cy, cx) for cy, cx in controls])
-    if len(null) < 2:
-        return [], r_star  # nothing to calibrate against: fail closed
-
-    # Each control's worst-axis exceedance vs the other controls (over
-    # the two texture axes; column 2 is the sign-gated contrast): the
-    # null distribution of T, capturing how jointly well-like random
-    # background ever gets (including axis correlations).
-    tex_null = null[:, :2]
-    exceed = (tex_null[None, :, :] > tex_null[:, None, :]).sum(axis=1)
-    t_null = (exceed / (len(tex_null) - 1)).max(axis=1)
-
-    wells = []
-    for py, px in peaks:
-        s = np.array(disk_stats(py, px))
-        if s[2] <= 0:
-            continue  # interior not darker than its surround: not a dark dome
-        t = float((tex_null > s[:2]).mean(axis=0).max())
-        p = (1 + int((t_null <= t).sum())) / (len(tex_null) + 1)
-        if p > alpha:
-            continue
-        # completeness here reports the smooth fraction of the interior,
-        # the disk analogue of the ring path's closed-rim fraction.
-        wells.append(dict(cy=float(py), cx=float(px), r=float(r_star),
-                          score=float(resp[py, px]), contrast=float(s[2]),
-                          completeness=float(s[0])))
-    return wells, r_star
-
-
 def label_wells(wells, r_star):
-    """Row/column labels in tray coordinates (stable across the sequence).
-
-    Wells cluster into rows by y-coordinate, but which cluster is Row 1
-    and which is Row 2 is not decided by vertical order (Row 1 is no
-    longer guaranteed to sit above Row 2). The rows are staggered, with
-    the Row 1 wells nested between the Row 2 wells, so Row 2 reaches
-    farther out and owns the rightmost well of the tray. Rows are
-    therefore numbered by how far right they extend -- the row holding
-    the rightmost well is Row 2 -- and the inner row is Row 1.
-    """
+    """Row/column labels in tray coordinates (stable across the sequence)."""
     wells = sorted(wells, key=lambda w: w["cy"])
     rows, current = [], [wells[0]]
     for w in wells[1:]:
@@ -658,12 +462,9 @@ def label_wells(wells, r_star):
             rows.append(current)
             current = [w]
     rows.append(current)
-    # Order rows by their outward (rightmost) reach rather than by height:
-    # the staggered outer row owning the tray's rightmost well is Row 2.
-    rows.sort(key=lambda row: max(w["cx"] for w in row))
     out = []
     for ri, row in enumerate(rows):
-        # columns are numbered right-to-left: the rightmost well is C1
+        # Columns are numbered right-to-left: the rightmost well is C1.
         for ci, w in enumerate(sorted(row, key=lambda w: -w["cx"]), start=1):
             out.append(Well(label=f"R{ri + 1}C{ci}", **w))
     return out
@@ -707,9 +508,9 @@ def planar_pose(Gs):
     """Per-frame planar pose from the homography (frame->tray).
 
     Reports in-plane rotation, isotropic scale, translation, and the
-    norm of the perspective row as a tilt indicator (0 when
-    fronto-parallel). Units are chosen so 2-decimal rounding keeps the
-    signal: scale as percent deviation from 1, perspective in 1e-6.
+    perspective-row norm as a tilt indicator (0 when fronto-parallel).
+    Units keep the signal through 2-decimal rounding: scale as percent
+    deviation from 1, perspective in 1e-6.
     """
     rows = []
     for t, G in enumerate(Gs):
@@ -736,11 +537,10 @@ def save_mosaic_figure(mosaic, wells, path, predicted=()):
     import matplotlib.pyplot as plt
     from matplotlib.patches import Circle
 
-    # Predicted wells usually lie beyond the scanned area; widen the
-    # view so they are not clipped at the mosaic border.
+    # Widen the view so predicted wells beyond the mosaic are not clipped.
     x0, x1, y0, y1 = 0, mosaic.shape[1], 0, mosaic.shape[0]
-    all_wells = list(wells) + list(predicted)
     if predicted:
+        all_wells = list(wells) + list(predicted)
         pad = 1.5 * max(w.r for w in all_wells)
         x0 = min(x0, min(w.cx - w.r for w in all_wells) - pad)
         x1 = max(x1, max(w.cx + w.r for w in all_wells) + pad)
@@ -828,15 +628,28 @@ def main():
     ap.add_argument("--key", default="sample", help="npz key holding the image")
     ap.add_argument("--out", type=Path, default=Path("output_tracks"),
                     help="output root directory")
-    ap.add_argument("--detector", choices=("auto", "ring", "disk"),
-                    default="auto",
-                    help="well detector: ring matched filter, smooth-dark-"
-                         "disk matched filter, or ring with disk fallback "
-                         "(default: auto)")
+    ap.add_argument("--template", type=Path, default=None,
+                    help="well layout template JSON (default: the bundled "
+                         f"{DEFAULT_TEMPLATE_PATH.name})")
+    ap.add_argument("--no-template", action="store_true",
+                    help="use the legacy per-well ring detector instead of "
+                         "whole-layout template matching")
     args = ap.parse_args()
 
     out = args.out / args.data_dir.name
     out.mkdir(parents=True, exist_ok=True)
+
+    def print_observed(ws):
+        for w in ws:
+            print(f"    {w.label}: Tray ({w.cy:7.1f},{w.cx:7.1f})"
+                  f"  r={w.r:5.1f}px  Score={w.score:.2f}"
+                  f"  Contrast={w.contrast:5.1f}"
+                  f"  Completeness={w.completeness:.2f}")
+
+    def print_predicted(ws):
+        for w in ws:
+            print(f"    {w.label}: Tray ({w.cy:7.1f},{w.cx:7.1f})"
+                  f"  r={w.r:5.1f}px  (Predicted)")
 
     print(f"Loading Frames from {args.data_dir} ...")
     frames, meta, names = load_frames(args.data_dir, args.key)
@@ -857,39 +670,68 @@ def main():
     print("Fusing Temporal Median Mosaic ...")
     mosaic, count = build_mosaic(frames, Gs, canvas_shape)
 
-    raw_wells, r_star, rim_w = [], None, None
-    if args.detector in ("auto", "ring"):
-        print("Detecting Wells (Ring Matched Filter) ...")
-        raw_wells, r_star, rim_w = detect_wells(mosaic, count)
-    if not raw_wells and args.detector in ("auto", "disk"):
-        if args.detector == "auto":
-            print("  No Ring-Like Wells; Falling Back to the Disk Filter")
-        print("Detecting Wells (Smooth-Dark-Disk Matched Filter) ...")
-        raw_wells, r_star = detect_wells_disk(mosaic, count)
-        rim_w = None
-    if not raw_wells:
+    def no_wells_exit():
         save_mosaic_figure(mosaic, [], out / "mosaic_labeled.png")
         print(f"  Mosaic Saved to {out / 'mosaic_labeled.png'}")
         print("No Wells Detected", file=sys.stderr)
         sys.exit(1)
-    wells = label_wells(raw_wells, r_star)
-    rim_note = f", Rim Width ~{rim_w:.0f}px" if rim_w is not None else ""
-    print(f"  Measured Well Radius ~{r_star}px{rim_note};"
-          f" {len(wells)} Wells:")
-    for w in wells:
-        print(f"    {w.label}: Tray ({w.cy:7.1f},{w.cx:7.1f})  r={w.r:5.1f}px"
-              f"  Score={w.score:.2f}  Contrast={w.contrast:5.1f}"
-              f"  Completeness={w.completeness:.2f}")
 
-    print("Predicting Missing Wells (Row Line + Spacing) ...")
-    predicted = predict_missing_wells(wells)
-    if predicted:
-        print(f"  {len(predicted)} Wells Extrapolated from the Detected Rows:")
-        for w in predicted:
-            print(f"    {w.label}: Tray ({w.cy:7.1f},{w.cx:7.1f})"
-                  f"  r={w.r:5.1f}px  (Predicted)")
+    template = None
+    if not args.no_template:
+        tpath = args.template if args.template else DEFAULT_TEMPLATE_PATH
+        if tpath.exists():
+            template = load_template(tpath)
+        elif args.template:
+            ap.error(f"template file not found: {tpath}")
+        else:
+            print(f"  No Bundled Template ({tpath.name}); "
+                  f"Falling Back to the Legacy Per-Well Detector")
+
+    if template is not None:
+        print("Detecting Wells (Whole-Layout Template Matching) ...")
+        expected = None
+        if reg.get("stage_gain") and template.get("stage_gain"):
+            # The run's own stage-to-pixel gain over the template
+            # scan's pins the zoom, so detection searches around the
+            # scale this scan is actually at.
+            expected = reg["stage_gain"] / template["stage_gain"]
+            print(f"  Zoom Prior from the Stage Calibration: "
+                  f"Expected Scale {expected:.2f}")
+        wells, predicted, tinfo = match_layout(mosaic, count, template,
+                                               expected_scale=expected)
+        if not wells:
+            no_wells_exit()
+        print(f"  Matched Layout: Scale={tinfo['scale']:.3f}, "
+              f"Rotation={tinfo['rotation_deg']:+.1f} deg, "
+              f"Orientation={tinfo['orientation'].title()}, "
+              f"Well Radius ~{tinfo['feature_radius']:.0f}px")
+        if tinfo.get("lattice_placed"):
+            print(f"  Wells Cut Off by the Mosaic Edge, Placed on the "
+                  f"Fitted Lattice: {', '.join(tinfo['lattice_placed'])}")
+        print(f"  {len(wells)} Observed Wells:")
+        print_observed(wells)
+        if predicted:
+            print(f"  {len(predicted)} Wells Placed by the Fitted Layout"
+                  f" (Not Observed):")
+            print_predicted(predicted)
     else:
-        print("  All Expected Wells Detected; Nothing to Predict")
+        print("Detecting Wells (Ring Matched Filter) ...")
+        raw_wells, r_star, rim_w = detect_wells(mosaic, count)
+        if not raw_wells:
+            no_wells_exit()
+        wells = label_wells(raw_wells, r_star)
+        print(f"  Measured Rim Radius ~{r_star}px, Rim Width ~{rim_w:.0f}px;"
+              f" {len(wells)} Wells:")
+        print_observed(wells)
+
+        print("Predicting Missing Wells (Row Line + Spacing) ...")
+        predicted = predict_missing_wells(wells)
+        if predicted:
+            print(f"  {len(predicted)} Wells Extrapolated from the "
+                  f"Detected Rows:")
+            print_predicted(predicted)
+        else:
+            print("  All Expected Wells Detected; Nothing to Predict")
 
     print("Projecting Per-Frame Tracks ...")
     records = project_tracks(wells, Gs, frames[0].shape)
@@ -909,10 +751,6 @@ def main():
         print(f"  Motor Centering Coordinates Computed for {n} Wells")
     else:
         print("  Skipped: Stage Metadata Cannot Support the Fit")
-
-    def row_col(label):
-        m = re.match(r"R(\d+)C(\d+)", label)
-        return int(m.group(1)), int(m.group(2))
 
     combined = sorted(
         [{**asdict(w), "observed": True} for w in wells]

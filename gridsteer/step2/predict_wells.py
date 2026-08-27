@@ -1,21 +1,16 @@
 #!/usr/bin/env python3
 """
-Predict the locations of wells that never entered the captured frames.
+Predict the locations of wells that never entered the captured frames,
+and fit the motor-to-pixel mapping.
 
-The scan often stops partway across the tray, so map_wells.py only
-sees the first wells of each row. Wells sit on two straight rows with
-equal spacing (row 1: 9 wells, row 2: 10 wells) and the scan always
-starts at the C1 end and travels left, so each row is completed by
-stepping leftward from the last detection by the row's average spacing
-vector until the expected count is reached.
+The scan often stops partway across the tray, so each row is completed
+by stepping leftward from the last detection by the row's average
+spacing vector until its expected count is reached. The motor mapping
+is a linear ridge regression from pixel shift (dx, dy) to motor shift
+(dx, dy, dz), used to compute the absolute motor coordinates that
+center each well in the frame.
 
-This module also learns the motor-to-pixel mapping: pairing recorded
-stage deltas with registered pixel deltas trains a linear ridge
-regression from pixel shift (dx, dy) to motor shift (dx, dy, dz), which
-answers "what absolute motor coordinates center well R{r}C{c} in the
-frame?" (written to well_centering_positions.json).
-
-Pure geometry only; imported and driven by scripts/map_wells.py.
+Pure geometry only; imported and driven by map_wells.py.
 """
 
 import re
@@ -25,8 +20,10 @@ from dataclasses import dataclass
 import numpy as np
 from sklearn.linear_model import Ridge
 
-# Expected number of wells per row for this tray (row index -> count).
-EXPECTED_WELLS_PER_ROW = {1: 9, 2: 10}
+# Physical layout (row index -> well count); row 2 sticks out by half
+# a pitch on both ends. Shared by well_template.py and the legacy
+# extrapolation below so the two cannot drift apart.
+ROW_COUNTS = {1: 9, 2: 10}
 
 
 @dataclass
@@ -37,30 +34,27 @@ class PredictedWell:
     r: float           # rim radius in mosaic pixels
 
 
-def _row_index(label: str) -> int:
-    m = re.match(r"R(\d+)C\d+", label)
+def row_col(label: str):
+    """(row, column) parsed from a well label such as "R2C7"."""
+    m = re.match(r"R(\d+)C(\d+)", label)
     if not m:
         raise ValueError(f"unrecognized well label {label!r}")
-    return int(m.group(1))
+    return int(m.group(1)), int(m.group(2))
 
 
-def predict_missing_wells(wells, expected=None):
+def predict_missing_wells(wells):
     """Extend each row of detected wells leftward to its expected count.
 
-    wells: detected wells (.label "R{row}C{col}", .cx, .cy, .r) as
-    produced by map_wells.label_wells. Returns a list of
-    PredictedWell for the positions the scan never reached.
+    wells: detected wells (.label "R{row}C{col}", .cx, .cy, .r).
+    Returns PredictedWell entries for positions the scan never reached.
     """
-    if expected is None:
-        expected = EXPECTED_WELLS_PER_ROW
-
     rows = {}
     for w in wells:
-        rows.setdefault(_row_index(w.label), []).append(w)
+        rows.setdefault(row_col(w.label)[0], []).append(w)
 
     predicted = []
     for ri, row_wells in sorted(rows.items()):
-        n_expected = expected.get(ri)
+        n_expected = ROW_COUNTS.get(ri)
         n = len(row_wells)
         if n_expected is None or n > n_expected:
             print(f"  Warning: Row {ri} Has {n} Detections but Expects "
@@ -73,7 +67,7 @@ def predict_missing_wells(wells, expected=None):
                   f"Least 2 to Estimate Spacing", file=sys.stderr)
             continue
 
-        # C1 is rightmost; the scan moves left, so extend past the
+        # C1 is rightmost and the scan moves left: extend past the
         # leftmost detection by the row's average spacing vector.
         row_wells = sorted(row_wells, key=lambda w: -w.cx)
         first, last = row_wells[0], row_wells[-1]
@@ -88,16 +82,23 @@ def predict_missing_wells(wells, expected=None):
     return predicted
 
 
+def stage_metadata_issue(meta):
+    """Why the stage metadata cannot support a translation-only fit:
+    "incomplete" (a frame lacks x/y/z), "phi varies" (the stage
+    rotated), or None when it can. One predicate gates both
+    apply_trajectory and fit_motor_pixel_map so they cannot drift
+    apart."""
+    if not meta or not all(all(k in m for k in ("x", "y", "z")) for m in meta):
+        return "incomplete"
+    phis = [m.get("phi", 0.0) for m in meta]
+    if max(phis) - min(phis) > 1e-6:
+        return "phi varies"
+    return None
+
+
 # --------------------------------------------------------------------------
 # Motor-to-pixel mapping: ridge regression from pixel shift to motor shift
 # --------------------------------------------------------------------------
-
-def _row_col(label: str):
-    m = re.match(r"R(\d+)C(\d+)", label)
-    if not m:
-        raise ValueError(f"unrecognized well label {label!r}")
-    return int(m.group(1)), int(m.group(2))
-
 
 def _project(H, x, y):
     """Apply a 3x3 homography to one point (pure numpy, no cv2)."""
@@ -109,9 +110,8 @@ def _project(H, x, y):
 class MotorPixelMap:
     """Linear ridge model: pixel shift (dx, dy) -> motor shift (dx, dy, dz).
 
-    One sklearn Ridge model per motor axis, as in motor_prediction.py.
-    Trained per run; phi is assumed constant (the fit stands down when
-    it varies).
+    One Ridge model per motor axis, trained per run; phi is assumed
+    constant (the fit stands down when it varies).
     """
     model_x: Ridge
     model_y: Ridge
@@ -132,21 +132,20 @@ def fit_motor_pixel_map(Gs, meta, ref_xy, alpha=1.0):
 
     Gs: per-frame homographies (frame pixels -> mosaic pixels).
     meta: per-frame stage metadata dicts with keys x, y, z (and phi).
-    ref_xy: a tray point in mosaic coordinates whose per-frame image
-    position measures how the content moved.
+    ref_xy: tray point (mosaic coords) whose per-frame image position
+    measures how the content moved.
 
-    Training pairs come from ALL frame pairs (i < j), not just
-    consecutive ones: with a constant per-axis step, one-gap pairs make
-    that axis indistinguishable from the intercept; mixed gaps break
-    the degeneracy. Returns a MotorPixelMap, or None when the metadata
-    cannot support a fit (missing keys, varying phi, < 3 usable pairs).
+    Training pairs come from ALL frame pairs (i < j): with a constant
+    per-axis step, consecutive pairs alone make that axis
+    indistinguishable from the intercept. Returns a MotorPixelMap, or
+    None when the metadata cannot support a fit.
     """
-    if not meta or not all(all(k in m for k in ("x", "y", "z")) for m in meta):
+    issue = stage_metadata_issue(meta)
+    if issue == "incomplete":
         print("  Warning: Incomplete Stage Metadata; Cannot Fit Motor Map",
               file=sys.stderr)
         return None
-    phis = [m.get("phi", 0.0) for m in meta]
-    if max(phis) - min(phis) > 1e-6:
+    if issue == "phi varies":
         print("  Warning: Phi Varies Across the Run; the Translation-Only "
               "Motor Map Cannot Model Rotation", file=sys.stderr)
         return None
@@ -182,11 +181,10 @@ def motor_centering_positions(mapping, wells, predicted, Gs, meta,
                               frame_shape, ref_frame=0):
     """Absolute motor coordinates that center each well in the frame.
 
-    For every well (detected and predicted) the well's position in the
-    reference frame is projected through that frame's homography; the
-    pixel offset from there to the frame center goes through the fitted
-    mapping to get the motor shift, which is applied to the reference
-    frame's recorded motor position. Returns a JSON-ready dict.
+    Each well's pixel offset from its reference-frame position to the
+    frame center goes through the fitted mapping; the resulting motor
+    shift is applied to the reference frame's recorded motor position.
+    Returns a JSON-ready dict.
     """
     h, w = frame_shape
     center = np.array([w / 2.0, h / 2.0])
@@ -209,11 +207,11 @@ def motor_centering_positions(mapping, wells, predicted, Gs, meta,
 
     predicted_labels = {p.label for p in predicted}
     for well in sorted(list(wells) + list(predicted),
-                       key=lambda w: _row_col(w.label)):
-        row, col = _row_col(well.label)
+                       key=lambda w: row_col(w.label)):
+        row, col = row_col(well.label)
         px = _project(Ginv, well.cx, well.cy)
-        # Centering needs a content shift of (center - current), the
-        # same direction the training deltas were measured in.
+        # Content shift of (center - current), matching the direction
+        # the training deltas were measured in.
         dpix = center - px
         dmot = mapping.motor_shift(dpix)
         out["well_centering_positions"][f"({row},{col})"] = {
