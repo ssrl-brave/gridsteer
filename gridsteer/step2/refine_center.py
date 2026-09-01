@@ -98,6 +98,38 @@ def refine_well_center(img, radius, search_radius=None):
     return dx, dy
 
 
+def save_diagnostic(img, radius, dx, dy, path, label=None):
+    """Save an overlay showing the original and refined circle positions."""
+    vis = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+    h, w = img.shape
+    cy, cx = h // 2, w // 2
+    r = int(round(radius))
+
+    # Original position (image center) — red circle + crosshair
+    cv2.circle(vis, (cx, cy), r, (0, 0, 255), 1)
+    cv2.drawMarker(vis, (cx, cy), (0, 0, 255), cv2.MARKER_CROSS, 15, 1)
+
+    # Refined position — green solid circle + crosshair
+    rx = int(round(cx + dx))
+    ry = int(round(cy + dy))
+    cv2.circle(vis, (rx, ry), r, (0, 255, 0), 2)
+    cv2.drawMarker(vis, (rx, ry), (0, 255, 0), cv2.MARKER_CROSS, 15, 2)
+
+    # Labels
+    y_text = 30
+    if label:
+        cv2.putText(vis, label, (10, y_text),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
+        y_text += 35
+    cv2.putText(vis, f"dx={dx:+.1f} dy={dy:+.1f}",
+                (10, y_text), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+    y_text += 30
+    cv2.putText(vis, "red=original  green=refined",
+                (10, y_text), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
+
+    cv2.imwrite(path, vis)
+
+
 def img_from_url(url):
     """Fetch a grayscale image from a camera URL."""
     import requests
@@ -111,6 +143,10 @@ def img_from_url(url):
 if __name__ == "__main__":
     url = sys.argv[1]
     radius = float(sys.argv[2])
+    save_path = sys.argv[3] if len(sys.argv) > 3 else None
+    label = sys.argv[4] if len(sys.argv) > 4 else None
     img = img_from_url(url)
     dx, dy = refine_well_center(img, radius)
+    if save_path:
+        save_diagnostic(img, radius, dx, dy, save_path, label=label)
     print(f"{dx:.2f} {dy:.2f}")

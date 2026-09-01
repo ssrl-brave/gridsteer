@@ -26,7 +26,7 @@ proc fourCorners_start { args } {
         send_operation_update "Usage: fourCorners <dirname>"
         send_operation_update "  dirname  — scan directory (must contain output_json_2/mapping.json)"
         send_operation_update ""
-        send_operation_update "Moves to four corner wells — (2,1), (1,1), (1,9), (1,10) — and"
+        send_operation_update "Moves to four corner wells — (2,1), (1,1), (1,9), (2,10) — and"
         send_operation_update "refines each position using ring correlation on the off-axis camera."
         send_operation_update "Writes refined motor positions to <dirname>/output_json_2/four_corners.json."
         send_operation_update "Requires optCirc to have been run first."
@@ -46,8 +46,8 @@ proc fourCorners_start { args } {
     global pyExe
     global offaxis_url
 
-    # The four corner wells: A=(2,1) B=(1,1) C=(1,9) D=(1,10)
-    set corners { {2 1} {1 1} {1 9} {1 10} }
+    # The four corner wells: A=(2,1) B=(1,1) C=(1,9) D=(2,10)
+    set corners { {2 1} {1 1} {1 9} {2 10} }
     set corner_names {A B C D}
 
     # Read the well radius from mapping.json
@@ -84,7 +84,9 @@ proc fourCorners_start { args } {
 
         # Grab a frame and find the pixel offset to the true well center
         send_operation_update "Corner $name: refining center ..."
-        set refineCmd "$pyExe -m gridsteer.step2.refine_center $offaxis_url $radius"
+        set diagImg "$dirname/output_json_2/refine_${name}_${wa}_${wb}.png"
+        set wellLabel "($wa,$wb)"
+        set refineCmd "$pyExe -m gridsteer.step2.refine_center $offaxis_url $radius $diagImg $wellLabel"
         set refineOut [eval exec $refineCmd]
         scan $refineOut "%f %f" dx_px dy_px
 
