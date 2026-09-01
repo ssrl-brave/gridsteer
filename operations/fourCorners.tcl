@@ -124,6 +124,7 @@ proc fourCorners_start { args } {
         wait_for_devices gonio_phi
         send_operation_update "Corner $name: autofocusing on inline camera ..."
         goCirc_autofocus $focus_range $focus_iters
+        after 1000
         move gonio_phi to $well_phi
         wait_for_devices gonio_phi
 
