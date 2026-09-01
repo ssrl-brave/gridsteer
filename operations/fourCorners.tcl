@@ -105,6 +105,9 @@ proc fourCorners_start { args } {
         move gonio_phi to $well_phi
         wait_for_devices sample_x sample_y sample_z gonio_phi
 
+        # Let vibration settle and camera stream catch up
+        after 1500
+
         # Grab a frame and find the pixel offset to the true well center
         send_operation_update "Corner $name: refining center ..."
         set diagImg "$dirname/output_json_2/refine_${name}_${wa}_${wb}.png"
@@ -117,8 +120,8 @@ proc fourCorners_start { args } {
 
         if { !$dryrun } {
             # Nudge the sample so the well center lands on the image center
-            # moveSampleOnVideo_start works in pixel units on the off-axis view
-            moveSampleOnVideo_start sample $dx_px $dy_px
+            set move [start_waitable_operation moveSampleOnVideo sample $dx_px $dy_px]
+            wait_for_operation_to_finish $move
         } else {
             send_operation_update "Corner $name: dry-run, skipping nudge"
         }
