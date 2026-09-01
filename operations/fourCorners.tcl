@@ -23,12 +23,14 @@ proc fourCorners_initialize { } {
 proc fourCorners_start { args } {
     # --- Help ---
     if { [llength $args] > 0 && ([lindex $args 0] eq "-h" || [lindex $args 0] eq "--help") } {
-        send_operation_update "Usage: fourCorners <dirname> ?--re-detect-radius? ?--dry-run?"
+        send_operation_update "Usage: fourCorners <dirname> ?--re-detect-radius? ?--dry-run? ?--focus-range N? ?--focus-iters N?"
         send_operation_update "  dirname              — scan directory (must contain output_json_2/)"
         send_operation_update "  --re-detect-radius   — auto-detect radius from live camera instead"
         send_operation_update "                         of using the value in wells.json (optional)"
         send_operation_update "  --dry-run            — move to each well but skip the nudge;"
         send_operation_update "                         only record positions and write diagnostics"
+        send_operation_update "  --focus-range <um>   — autofocus Z search range in um (default: 500)"
+        send_operation_update "  --focus-iters <n>    — max autofocus iterations (default: 12)"
         send_operation_update ""
         send_operation_update "Moves to four corner wells — (2,1), (1,1), (1,9), (2,10) — and"
         send_operation_update "refines each position using ring correlation on the off-axis camera."
@@ -41,14 +43,25 @@ proc fourCorners_start { args } {
     set dirname ""
     set redetect 0
     set dryrun 0
-    foreach a $args {
+    set focus_range 500
+    set focus_iters 12
+    set i 0
+    while {$i < [llength $args]} {
+        set a [lindex $args $i]
         if { $a eq "--re-detect-radius" } {
             set redetect 1
         } elseif { $a eq "--dry-run" } {
             set dryrun 1
+        } elseif { $a eq "--focus-range" } {
+            incr i
+            set focus_range [lindex $args $i]
+        } elseif { $a eq "--focus-iters" } {
+            incr i
+            set focus_iters [lindex $args $i]
         } elseif { $dirname eq "" } {
             set dirname $a
         }
+        incr i
     }
     if { $dirname eq "" } {
         send_operation_update "ERROR: dirname is required. Run fourCorners --help for usage."
@@ -62,9 +75,8 @@ proc fourCorners_start { args } {
     global pyExe
     global offaxis_url
 
-    # The four corner wells (TEST: C,D moved to mid-grid for safety)
-    # Restore to {1 9} {2 10} after validation
-    set corners { {2 1} {1 1} {1 5} {2 5} }
+    # The four corner wells: A=(2,1) B=(1,1) C=(1,9) D=(2,10)
+    set corners { {2 1} {1 1} {1 9} {2 10} }
     set corner_names {A B C D}
 
     # Verify mapping.json exists
@@ -106,8 +118,17 @@ proc fourCorners_start { args } {
         move gonio_phi to $well_phi
         wait_for_devices sample_x sample_y sample_z gonio_phi
 
+        # Autofocus on the inline camera: rotate +90, focus, rotate back
+        set phi_plus_90 [expr {$well_phi + 90.0}]
+        move gonio_phi to $phi_plus_90
+        wait_for_devices gonio_phi
+        send_operation_update "Corner $name: autofocusing on inline camera ..."
+        goCirc_autofocus $focus_range $focus_iters
+        move gonio_phi to $well_phi
+        wait_for_devices gonio_phi
+
         # Let vibration settle and camera stream catch up
-        after 1500
+        after 1000
 
         # Grab a frame and find the pixel offset to the true well center
         send_operation_update "Corner $name: refining center ..."
