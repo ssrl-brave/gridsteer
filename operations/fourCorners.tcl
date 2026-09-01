@@ -74,8 +74,7 @@ proc fourCorners_start { args } {
         send_operation_update "Will auto-detect radius from live camera"
     } else {
         set wells_file "$dirname/output_json_2/wells.json"
-        set pyCmd "$pyExe -c \"import json; ws=json.load(open('$wells_file')); print(ws\[0\]\['r'\])\""
-        set radius [string trim [eval exec $pyCmd]]
+        set radius [string trim [exec $pyExe -c "import json; ws=json.load(open('$wells_file')); print(ws\[0\]\['r'\])"]]
         send_operation_update "Well radius from wells.json: $radius px"
     }
 
