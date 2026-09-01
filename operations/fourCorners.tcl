@@ -119,9 +119,14 @@ proc fourCorners_start { args } {
         send_operation_update "Corner $name: pixel offset dx=$dx_px dy=$dy_px (detected radius=$det_radius)"
 
         if { !$dryrun } {
-            # Nudge the sample so the well center lands on the image center
-            set move [start_waitable_operation moveSampleOnVideo sample $dx_px $dy_px]
-            wait_for_operation_to_finish $move
+            # Convert pixel offset to image-fraction units for moveSample
+            # Camera frame is 720x480 (standard off-axis resolution)
+            set dx_frac [expr {$dx_px / 720.0}]
+            set dy_frac [expr {$dy_px / 480.0}]
+            send_operation_update "Corner $name: nudging by frac dx=$dx_frac dy=$dy_frac"
+            set moveOp [start_waitable_operation moveSample $dx_frac $dy_frac]
+            wait_for_operation_to_finish $moveOp
+            after 300
         } else {
             send_operation_update "Corner $name: dry-run, skipping nudge"
         }
