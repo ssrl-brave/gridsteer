@@ -628,6 +628,9 @@ def main():
     ap.add_argument("--key", default="sample", help="npz key holding the image")
     ap.add_argument("--out", type=Path, default=Path("output_tracks"),
                     help="output root directory")
+    ap.add_argument("--outdir", type=Path, default=None,
+                    help="exact output directory (overrides --out; no "
+                         "subdirectory is appended)")
     ap.add_argument("--template", type=Path, default=None,
                     help="well layout template JSON (default: the bundled "
                          f"{DEFAULT_TEMPLATE_PATH.name})")
@@ -636,7 +639,10 @@ def main():
                          "whole-layout template matching")
     args = ap.parse_args()
 
-    out = args.out / args.data_dir.name
+    if args.outdir is not None:
+        out = args.outdir
+    else:
+        out = args.out / args.data_dir.name
     out.mkdir(parents=True, exist_ok=True)
 
     def print_observed(ws):
@@ -760,6 +766,8 @@ def main():
         json.dump(combined, f, indent=2)
     if centering is not None:
         with open(out / "well_centering_positions.json", "w") as f:
+            json.dump(centering, f, indent=2)
+        with open(out / "mapping.json", "w") as f:
             json.dump(centering, f, indent=2)
     with open(out / "tracks.csv", "w", newline="") as f:
         wr = csv.DictWriter(f, fieldnames=list(records[0].keys()))

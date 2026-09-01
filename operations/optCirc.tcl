@@ -72,10 +72,6 @@ proc zigZagScan { dirname {n_passes 3}  {horiz_step 0.05} {vert_step 0.2} {scan_
         set pyOut [eval exec $pyCmd]
         #send_operation_update "got python output: =$pyOut"
 
-        # Launch radius detection in background as soon as snapshot is saved
-        set convergenceFile "$dirname/radius_${count}.txt"
-        exec $pyExe -m gridsteer.step1_5.find_radius $dirname/test${count}.npz --output-dir $dirname > $convergenceFile 2>/dev/null &
-
         set count [expr $count+1]
       }
       
@@ -114,47 +110,17 @@ proc optCirc_start { dirname {n_passes 3}  {horiz_step 0.05} {vert_step 0.2} {sc
     move gonio_phi to $start_G
     wait_for_devices sample_x sample_y sample_z gonio_phi
 
-	# Step 1.5: Collect radius detection results (launched in background during scan)
-	# Wait briefly for any stragglers to finish writing
-	after 3000
-	send_operation_update "Collecting radius detection results ..."
-	set radii {}
-	set n_success 0
-	set n_fail 0
-	foreach rfile [glob -nocomplain $dirname/radius_*.txt] {
-		set fp [open $rfile r]
-		set val [string trim [read $fp]]
-		close $fp
-		if {$val ne "" && $val ne "NaN" && [string is double $val]} {
-			lappend radii $val
-			incr n_success
-		} else {
-			incr n_fail
-		}
-	}
-	if {[llength $radii] > 0} {
-		# Take the median of all successful detections
-		set sorted [lsort -real $radii]
-		set n [llength $sorted]
-		set mid [expr {$n / 2}]
-		set detected_radius [expr {int(round([lindex $sorted $mid]))}]
-		send_operation_update "Detected well radius: $detected_radius px (from $n_success/$[expr {$n_success+$n_fail}] frames)"
-	} else {
-		send_operation_update "ERROR: no frames returned a valid radius - aborting"
-		return FAIL
-	}
-
-	# Step 2: Call the circle map optimizer with detected radius
+	# Step 2: Map circular wells via whole-layout template matching
+	set outdir "$dirname/output_json_2"
 	send_operation_update "Running the optimizer to map out circular wells in the grid ... "
-    set pyCmd "$pyExe -m gridsteer.step2.main $dirname --target_radius $detected_radius --outdir $dirname"
-	send_operation_update "Debug log will be in $dirname/logs/"
+    set pyCmd "$pyExe -m gridsteer.step2.map_wells $dirname --outdir $outdir"
 	send_operation_update "pyCmd: $pyCmd"
     set pyOut [eval exec $pyCmd]
 
 	# Verify mapping.json was produced (required by goCirc)
-	set mapping_file "$dirname/output_json_2/mapping.json"
+	set mapping_file "$outdir/mapping.json"
 	if {![file exists $mapping_file]} {
-		send_operation_update "ERROR: mapping.json was not produced - motor calibration likely failed. Check $dirname/logs/"
+		send_operation_update "ERROR: mapping.json was not produced - motor calibration likely failed"
 		return FAIL
 	}
 	send_operation_update "mapping.json ready at $mapping_file"
