@@ -23,8 +23,10 @@ proc fourCorners_initialize { } {
 proc fourCorners_start { args } {
     # --- Help ---
     if { [llength $args] > 0 && ([lindex $args 0] eq "-h" || [lindex $args 0] eq "--help") } {
-        send_operation_update "Usage: fourCorners <dirname>"
-        send_operation_update "  dirname  — scan directory (must contain output_json_2/mapping.json)"
+        send_operation_update "Usage: fourCorners <dirname> ?--re-detect-radius?"
+        send_operation_update "  dirname              — scan directory (must contain output_json_2/)"
+        send_operation_update "  --re-detect-radius   — auto-detect radius from live camera instead"
+        send_operation_update "                         of using the value in wells.json (optional)"
         send_operation_update ""
         send_operation_update "Moves to four corner wells — (2,1), (1,1), (1,9), (2,10) — and"
         send_operation_update "refines each position using ring correlation on the off-axis camera."
@@ -33,7 +35,16 @@ proc fourCorners_start { args } {
         return OK
     }
 
-    set dirname [lindex $args 0]
+    # --- Parse args ---
+    set dirname ""
+    set redetect 0
+    foreach a $args {
+        if { $a eq "--re-detect-radius" } {
+            set redetect 1
+        } elseif { $dirname eq "" } {
+            set dirname $a
+        }
+    }
     if { $dirname eq "" } {
         send_operation_update "ERROR: dirname is required. Run fourCorners --help for usage."
         return FAIL
@@ -50,15 +61,23 @@ proc fourCorners_start { args } {
     set corners { {2 1} {1 1} {1 9} {2 10} }
     set corner_names {A B C D}
 
-    # Read the well radius from mapping.json
+    # Verify mapping.json exists
     set mapping_file "$dirname/output_json_2/mapping.json"
     if {![file exists $mapping_file]} {
         send_operation_update "ERROR: $mapping_file not found. Run optCirc first."
         return FAIL
     }
-    set pyCmd "$pyExe -c \"import json; print(json.load(open('$mapping_file')).get('well_radius_px', 80))\""
-    set radius [string trim [eval exec $pyCmd]]
-    send_operation_update "Well radius for refinement: $radius px"
+
+    # Get well radius: from wells.json by default, or auto-detect
+    if { $redetect } {
+        set radius "auto"
+        send_operation_update "Will auto-detect radius from live camera"
+    } else {
+        set wells_file "$dirname/output_json_2/wells.json"
+        set pyCmd "$pyExe -c \"import json; ws=json.load(open('$wells_file')); print(ws\[0\]\['r'\])\""
+        set radius [string trim [eval exec $pyCmd]]
+        send_operation_update "Well radius from wells.json: $radius px"
+    }
 
     # Collect refined positions: list of {name wa wb x y z phi}
     set results {}
@@ -88,9 +107,9 @@ proc fourCorners_start { args } {
         set wellLabel "($wa,$wb)"
         set refineCmd "$pyExe -m gridsteer.step2.refine_center $offaxis_url $radius $diagImg $wellLabel"
         set refineOut [eval exec $refineCmd]
-        scan $refineOut "%f %f" dx_px dy_px
+        scan $refineOut "%f %f %f" dx_px dy_px det_radius
 
-        send_operation_update "Corner $name: pixel offset dx=$dx_px dy=$dy_px"
+        send_operation_update "Corner $name: pixel offset dx=$dx_px dy=$dy_px (detected radius=$det_radius)"
 
         # Nudge the sample so the well center lands on the image center
         # moveSampleOnVideo_start works in pixel units on the off-axis view

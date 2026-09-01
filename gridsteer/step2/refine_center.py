@@ -2,14 +2,12 @@
 
 Given an off-axis camera image where a well is approximately centered,
 find the sub-pixel offset (dx, dy) in pixels from image center to the
-true well center using ring cross-correlation at a known radius.
+true well center using ring cross-correlation. The radius can be
+supplied or auto-detected by sweeping a range of candidate radii.
 
-Usage (standalone test):
-    python -m gridsteer.step2.refine_center <image_url> <radius_px>
-
-From Tcl (via fourCorners / goCirc):
-    python -m gridsteer.step2.refine_center <image_url> <radius_px>
-    # prints: dx_px dy_px
+Usage:
+    python -m gridsteer.step2.refine_center <image_url> [radius_px]
+    # prints: dx_px dy_px radius_px
 """
 
 import sys
@@ -29,21 +27,66 @@ def ring_kernel(r, thickness=None):
     return t - t.mean()
 
 
-def refine_well_center(img, radius, search_radius=None):
+def detect_radius(img, r_min=50, r_max=200, step=5):
+    """Find the well radius by sweeping ring correlations near image center.
+
+    Returns the radius (in pixels) whose ring kernel produces the
+    strongest peak response in a small window around image center.
+    """
+    from scipy.signal import fftconvolve
+
+    smooth = cv2.GaussianBlur(img.astype(np.float32), (0, 0), 2.0)
+    h, w = smooth.shape
+    cy, cx = h // 2, w // 2
+    # search window: quarter of the shorter dimension
+    sw = min(h, w) // 4
+
+    best_score = -np.inf
+    best_r = (r_min + r_max) // 2
+    for r in range(r_min, r_max + 1, step):
+        kern = ring_kernel(r)
+        resp = fftconvolve(smooth, kern[::-1, ::-1], mode="same")
+        crop = resp[max(0, cy - sw):cy + sw + 1,
+                    max(0, cx - sw):cx + sw + 1]
+        score = float(crop.max())
+        if score > best_score:
+            best_score = score
+            best_r = r
+
+    # Fine sweep around the coarse winner
+    fine_lo = max(r_min, best_r - step)
+    fine_hi = min(r_max, best_r + step)
+    for r in range(fine_lo, fine_hi + 1):
+        kern = ring_kernel(r)
+        resp = fftconvolve(smooth, kern[::-1, ::-1], mode="same")
+        crop = resp[max(0, cy - sw):cy + sw + 1,
+                    max(0, cx - sw):cx + sw + 1]
+        score = float(crop.max())
+        if score > best_score:
+            best_score = score
+            best_r = r
+
+    return best_r
+
+
+def refine_well_center(img, radius=None, search_radius=None):
     """Find the offset from image center to the well center.
 
     Parameters
     ----------
     img : 2-D uint8 array (grayscale camera frame)
-    radius : float, well rim radius in pixels
+    radius : float or None. If None, auto-detected from the frame.
     search_radius : int, max pixels to search from center (default: radius)
 
     Returns
     -------
-    dx, dy : float, pixel offset (image center to well center).
-             To center the well, move the content by (-dx, -dy).
+    dx, dy, radius : offset from image center to well center, and the
+                     radius used. To center the well, nudge by (dx, dy).
     """
     from scipy.signal import fftconvolve
+
+    if radius is None or radius <= 0:
+        radius = detect_radius(img)
 
     if search_radius is None:
         search_radius = int(radius)
@@ -67,7 +110,6 @@ def refine_well_center(img, radius, search_radius=None):
     peak_x = x0 + ix
 
     def _subpix_y(arr, py, px):
-        """Quadratic interpolation along the y axis at fixed x."""
         if py <= 0 or py >= arr.shape[0] - 1:
             return float(py)
         vm = float(arr[py - 1, px])
@@ -79,7 +121,6 @@ def refine_well_center(img, radius, search_radius=None):
         return py + (vm - vp) / denom
 
     def _subpix_x(arr, py, px):
-        """Quadratic interpolation along the x axis at fixed y."""
         if px <= 0 or px >= arr.shape[1] - 1:
             return float(px)
         vm = float(arr[py, px - 1])
@@ -95,7 +136,7 @@ def refine_well_center(img, radius, search_radius=None):
 
     dx = sub_x - cx
     dy = sub_y - cy
-    return dx, dy
+    return dx, dy, float(radius)
 
 
 def save_diagnostic(img, radius, dx, dy, path, label=None):
@@ -142,11 +183,11 @@ def img_from_url(url):
 
 if __name__ == "__main__":
     url = sys.argv[1]
-    radius = float(sys.argv[2])
+    radius = float(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2] != "auto" else None
     save_path = sys.argv[3] if len(sys.argv) > 3 else None
     label = sys.argv[4] if len(sys.argv) > 4 else None
     img = img_from_url(url)
-    dx, dy = refine_well_center(img, radius)
+    dx, dy, r_used = refine_well_center(img, radius)
     if save_path:
-        save_diagnostic(img, radius, dx, dy, save_path, label=label)
-    print(f"{dx:.2f} {dy:.2f}")
+        save_diagnostic(img, r_used, dx, dy, save_path, label=label)
+    print(f"{dx:.2f} {dy:.2f} {r_used:.1f}")
