@@ -62,8 +62,9 @@ proc fourCorners_start { args } {
     global pyExe
     global offaxis_url
 
-    # The four corner wells: A=(2,1) B=(1,1) C=(1,9) D=(2,10)
-    set corners { {2 1} {1 1} {1 9} {2 10} }
+    # The four corner wells (TEST: C,D moved to mid-grid for safety)
+    # Restore to {1 9} {2 10} after validation
+    set corners { {2 1} {1 1} {1 5} {2 5} }
     set corner_names {A B C D}
 
     # Verify mapping.json exists
