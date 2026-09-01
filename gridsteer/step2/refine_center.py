@@ -76,7 +76,9 @@ def refine_well_center(img, radius=None, search_radius=None):
     ----------
     img : 2-D uint8 array (grayscale camera frame)
     radius : float or None. If None, auto-detected from the frame.
-    search_radius : int, max pixels to search from center (default: radius)
+    search_radius : int, max pixels to search from center.
+                    Default: radius/3 (the well is already approximately
+                    centered, so we only need a small search window).
 
     Returns
     -------
@@ -89,12 +91,16 @@ def refine_well_center(img, radius=None, search_radius=None):
         radius = detect_radius(img)
 
     if search_radius is None:
-        search_radius = int(radius)
+        search_radius = max(20, int(radius / 3))
 
     smooth = cv2.GaussianBlur(img.astype(np.float32), (0, 0), 2.0)
     kern = ring_kernel(radius)
 
     resp = fftconvolve(smooth, kern[::-1, ::-1], mode="same")
+
+    # Use absolute response — the well rim may be darker or brighter
+    # than its surroundings depending on lighting
+    resp = np.abs(resp)
 
     h, w = resp.shape
     cy, cx = h // 2, w // 2

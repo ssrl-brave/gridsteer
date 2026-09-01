@@ -23,10 +23,12 @@ proc fourCorners_initialize { } {
 proc fourCorners_start { args } {
     # --- Help ---
     if { [llength $args] > 0 && ([lindex $args 0] eq "-h" || [lindex $args 0] eq "--help") } {
-        send_operation_update "Usage: fourCorners <dirname> ?--re-detect-radius?"
+        send_operation_update "Usage: fourCorners <dirname> ?--re-detect-radius? ?--dry-run?"
         send_operation_update "  dirname              — scan directory (must contain output_json_2/)"
         send_operation_update "  --re-detect-radius   — auto-detect radius from live camera instead"
         send_operation_update "                         of using the value in wells.json (optional)"
+        send_operation_update "  --dry-run            — move to each well but skip the nudge;"
+        send_operation_update "                         only record positions and write diagnostics"
         send_operation_update ""
         send_operation_update "Moves to four corner wells — (2,1), (1,1), (1,9), (2,10) — and"
         send_operation_update "refines each position using ring correlation on the off-axis camera."
@@ -38,9 +40,12 @@ proc fourCorners_start { args } {
     # --- Parse args ---
     set dirname ""
     set redetect 0
+    set dryrun 0
     foreach a $args {
         if { $a eq "--re-detect-radius" } {
             set redetect 1
+        } elseif { $a eq "--dry-run" } {
+            set dryrun 1
         } elseif { $dirname eq "" } {
             set dirname $a
         }
@@ -110,12 +115,16 @@ proc fourCorners_start { args } {
 
         send_operation_update "Corner $name: pixel offset dx=$dx_px dy=$dy_px (detected radius=$det_radius)"
 
-        # Nudge the sample so the well center lands on the image center
-        # moveSampleOnVideo_start works in pixel units on the off-axis view
-        moveSampleOnVideo_start sample $dx_px $dy_px
+        if { !$dryrun } {
+            # Nudge the sample so the well center lands on the image center
+            # moveSampleOnVideo_start works in pixel units on the off-axis view
+            moveSampleOnVideo_start sample $dx_px $dy_px
+        } else {
+            send_operation_update "Corner $name: dry-run, skipping nudge"
+        }
 
-        # Record the refined motor position (read back after the nudge)
-        send_operation_update "Corner $name ($wa,$wb): refined x=$sample_x y=$sample_y z=$sample_z phi=$gonio_phi"
+        # Record the motor position (current if dry-run, post-nudge otherwise)
+        send_operation_update "Corner $name ($wa,$wb): x=$sample_x y=$sample_y z=$sample_z phi=$gonio_phi"
 
         lappend results [list $name $wa $wb $sample_x $sample_y $sample_z $gonio_phi]
     }
