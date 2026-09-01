@@ -122,8 +122,8 @@ proc fourCorners_start { args } {
         if { !$dryrun } {
             # Convert pixel offset to image-fraction units for moveSample
             # Camera frame is 720x480 (standard off-axis resolution)
-            set dx_frac [expr {$dx_px / 720.0}]
-            set dy_frac [expr {$dy_px / 480.0}]
+            set dx_frac [expr {-$dx_px / 720.0}]
+            set dy_frac [expr {-$dy_px / 480.0}]
             send_operation_update "Corner $name: nudging by frac dx=$dx_frac dy=$dy_frac"
             set moveOp [start_waitable_operation moveSample $dx_frac $dy_frac]
             wait_for_operation_to_finish $moveOp
