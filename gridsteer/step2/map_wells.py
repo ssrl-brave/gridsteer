@@ -693,6 +693,7 @@ def main():
             print(f"  No Bundled Template ({tpath.name}); "
                   f"Falling Back to the Legacy Per-Well Detector")
 
+    well_radius = None
     if template is not None:
         print("Detecting Wells (Whole-Layout Template Matching) ...")
         expected = None
@@ -707,10 +708,11 @@ def main():
                                                expected_scale=expected)
         if not wells:
             no_wells_exit()
+        well_radius = tinfo['feature_radius']
         print(f"  Matched Layout: Scale={tinfo['scale']:.3f}, "
               f"Rotation={tinfo['rotation_deg']:+.1f} deg, "
               f"Orientation={tinfo['orientation'].title()}, "
-              f"Well Radius ~{tinfo['feature_radius']:.0f}px")
+              f"Well Radius ~{well_radius:.0f}px")
         if tinfo.get("lattice_placed"):
             print(f"  Wells Cut Off by the Mosaic Edge, Placed on the "
                   f"Fitted Lattice: {', '.join(tinfo['lattice_placed'])}")
@@ -726,6 +728,7 @@ def main():
         if not raw_wells:
             no_wells_exit()
         wells = label_wells(raw_wells, r_star)
+        well_radius = float(r_star)
         print(f"  Measured Rim Radius ~{r_star}px, Rim Width ~{rim_w:.0f}px;"
               f" {len(wells)} Wells:")
         print_observed(wells)
@@ -765,6 +768,8 @@ def main():
     with open(out / "wells.json", "w") as f:
         json.dump(combined, f, indent=2)
     if centering is not None:
+        if well_radius is not None:
+            centering["well_radius_px"] = round(well_radius, 1)
         with open(out / "well_centering_positions.json", "w") as f:
             json.dump(centering, f, indent=2)
         with open(out / "mapping.json", "w") as f:

@@ -66,24 +66,32 @@ def refine_well_center(img, radius, search_radius=None):
     peak_y = y0 + iy
     peak_x = x0 + ix
 
-    def _subpix(arr, idx, axis):
-        """Quadratic interpolation along one axis."""
-        if idx <= 0 or idx >= arr.shape[axis] - 1:
-            return float(idx)
-        s = [slice(None)] * arr.ndim
-        s[axis] = idx - 1
-        vm = float(arr[tuple(s)])
-        s[axis] = idx
-        v0 = float(arr[tuple(s)])
-        s[axis] = idx + 1
-        vp = float(arr[tuple(s)])
+    def _subpix_y(arr, py, px):
+        """Quadratic interpolation along the y axis at fixed x."""
+        if py <= 0 or py >= arr.shape[0] - 1:
+            return float(py)
+        vm = float(arr[py - 1, px])
+        v0 = float(arr[py, px])
+        vp = float(arr[py + 1, px])
         denom = 2.0 * (vm - 2 * v0 + vp)
         if abs(denom) < 1e-12:
-            return float(idx)
-        return idx + (vm - vp) / denom
+            return float(py)
+        return py + (vm - vp) / denom
 
-    sub_y = _subpix(resp, peak_y, 0)
-    sub_x = _subpix(resp, peak_x, 1)
+    def _subpix_x(arr, py, px):
+        """Quadratic interpolation along the x axis at fixed y."""
+        if px <= 0 or px >= arr.shape[1] - 1:
+            return float(px)
+        vm = float(arr[py, px - 1])
+        v0 = float(arr[py, px])
+        vp = float(arr[py, px + 1])
+        denom = 2.0 * (vm - 2 * v0 + vp)
+        if abs(denom) < 1e-12:
+            return float(px)
+        return px + (vm - vp) / denom
+
+    sub_y = _subpix_y(resp, peak_y, peak_x)
+    sub_x = _subpix_x(resp, peak_y, peak_x)
 
     dx = sub_x - cx
     dy = sub_y - cy
