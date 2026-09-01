@@ -21,7 +21,36 @@ proc goCirc_initialize { } {
     send_operation_update "Inline camera feeding: $inline_url"
 }
 
-proc goCirc_start { dirname well_a well_b {autofocus 0} {focus_range 500} {focus_iters 12} } {
+proc goCirc_start { args } {
+    # --- Help ---
+    if { [llength $args] > 0 && ([lindex $args 0] eq "-h" || [lindex $args 0] eq "--help") } {
+        send_operation_update "Usage: goCirc <dirname> <well_a> <well_b> ?autofocus? ?focus_range? ?focus_iters?"
+        send_operation_update "  dirname      — scan directory (must contain output_json_2/mapping.json)"
+        send_operation_update "  well_a       — well row index (integer)"
+        send_operation_update "  well_b       — well column index (integer)"
+        send_operation_update "  autofocus    — enable Bayesian autofocus: 0 or 1 (default: 0)"
+        send_operation_update "  focus_range  — autofocus Z search range in um (default: 500)"
+        send_operation_update "  focus_iters  — max autofocus iterations (default: 12)"
+        send_operation_update ""
+        send_operation_update "Moves motors to center the specified well using the mapping"
+        send_operation_update "produced by optCirc. Optionally runs Bayesian autofocus on the"
+        send_operation_update "inline camera after positioning."
+        return OK
+    }
+
+    # --- Parse positional args with defaults ---
+    set dirname     [lindex $args 0]
+    set well_a      [lindex $args 1]
+    set well_b      [lindex $args 2]
+    set autofocus   [expr {[llength $args] > 3 ? [lindex $args 3] : 0}]
+    set focus_range [expr {[llength $args] > 4 ? [lindex $args 4] : 500}]
+    set focus_iters [expr {[llength $args] > 5 ? [lindex $args 5] : 12}]
+
+    if { [llength $args] < 3 } {
+        send_operation_update "ERROR: dirname, well_a, and well_b are required. Run goCirc --help for usage."
+        return FAIL
+    }
+
     # access the current motor positions
     variable sample_x
     variable sample_y

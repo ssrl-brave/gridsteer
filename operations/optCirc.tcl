@@ -83,7 +83,36 @@ proc zigZagScan { dirname {n_passes 3}  {horiz_step 0.05} {vert_step 0.2} {scan_
 }
 
 
-proc optCirc_start { dirname {n_passes 3}  {horiz_step 0.05} {vert_step 0.2} {scan_height 2.5} } {
+proc optCirc_start { args } {
+    # --- Help ---
+    if { [llength $args] > 0 && ([lindex $args 0] eq "-h" || [lindex $args 0] eq "--help") } {
+        send_operation_update "Usage: optCirc <dirname> ?n_passes? ?horiz_step? ?vert_step? ?scan_height?"
+        send_operation_update "  dirname      — output directory for scan data and results"
+        send_operation_update "  n_passes     — number of zigzag passes (default: 3)"
+        send_operation_update "  horiz_step   — horizontal step size in mm (default: 0.05)"
+        send_operation_update "  vert_step    — vertical step size in mm (default: 0.2)"
+        send_operation_update "  scan_height  — total vertical travel in mm (default: 2.5)"
+        send_operation_update ""
+        send_operation_update "Scans the sample in a zigzag pattern, captures off-axis and inline"
+        send_operation_update "camera frames, then runs whole-layout template matching (step2) to"
+        send_operation_update "detect circular wells and compute motor centering positions."
+        send_operation_update "Results are written to <dirname>/output_json_2/mapping.json."
+        send_operation_update "Use goCirc to move to a specific well afterwards."
+        return OK
+    }
+
+    # --- Parse positional args with defaults ---
+    set dirname    [lindex $args 0]
+    set n_passes   [expr {[llength $args] > 1 ? [lindex $args 1] : 3}]
+    set horiz_step [expr {[llength $args] > 2 ? [lindex $args 2] : 0.05}]
+    set vert_step  [expr {[llength $args] > 3 ? [lindex $args 3] : 0.2}]
+    set scan_height [expr {[llength $args] > 4 ? [lindex $args 4] : 2.5}]
+
+    if { $dirname eq "" } {
+        send_operation_update "ERROR: dirname is required. Run optCirc --help for usage."
+        return FAIL
+    }
+
     # access the current motor positions
     variable sample_x
     variable sample_y
