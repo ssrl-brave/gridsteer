@@ -873,6 +873,233 @@ def match_layout(mosaic, count, template, observed_z=3.0, anchor_z=2.5,
 
 
 # --------------------------------------------------------------------------
+# Prior-anchored layout matching
+# --------------------------------------------------------------------------
+
+def match_layout_prior(mosaic, count, template, expected_scale,
+                       observed_z=3.0, min_observed=2):
+    """Match well layout using known physical constraints.
+
+    Uses the stage-calibration scale prior and known tray orientation
+    (R2/10-well row on top, R1/9-well row on bottom, C1 rightmost).
+    Bypasses the orientation duel and column anchoring of match_layout(),
+    which can fail on grids with deformed or irregular wells.
+
+    Returns (wells, predicted, info) in the same format as match_layout().
+    """
+    from skimage.filters import gaussian
+    from scipy.signal import fftconvolve
+    from .map_wells import SMOOTH_SIGMA, Well, rim_stats
+
+    P = np.array([[w["u"], w["v"]] for w in template["wells"]], float)
+    labels = [w["label"] for w in template["wells"]]
+    r_t = float(template["radius"])
+    f = expected_scale
+    r_px = f * r_t
+
+    # ---- mosaic prep ----
+    valid = (count > 0) & np.isfinite(mosaic)
+    fill = np.nanmax(mosaic)
+    smooth = gaussian(np.where(valid, mosaic, fill), SMOOTH_SIGMA)
+    z = _coverage_response(smooth, valid, r_px)
+    z_clean = np.nan_to_num(z, nan=0.0)
+
+    # ---- base angle: R2 on top (smaller y) ----
+    # The template has R2 below R1 at theta=0, so theta=pi flips R2 to
+    # the top.  The 180-degree flip also reverses the column order in
+    # the image, so we mirror column labels (C1 becomes rightmost).
+    i_r2c1 = labels.index("R2C1")
+    i_r1c1 = labels.index("R1C1")
+
+    base_theta = 0.0
+    for base_deg in (0.0, 180.0):
+        th = np.radians(base_deg)
+        c, s = np.cos(th), np.sin(th)
+        r2c1_y = s * P[i_r2c1, 0] + c * P[i_r2c1, 1]
+        r1c1_y = s * P[i_r1c1, 0] + c * P[i_r1c1, 1]
+        if r2c1_y < r1c1_y:
+            base_theta = th
+            break
+
+    flipped = abs(base_theta) > 1  # True when base is ~pi
+    if flipped:
+        labels = [_mirror_columns(l) for l in labels]
+        i_r2c1 = labels.index("R2C1")
+
+    # ---- sweep small rotations, FFT cross-correlation for each ----
+    best_score = -np.inf
+    best_params = None
+
+    for dth_deg in np.arange(-5.0, 5.5, 0.5):
+        theta = base_theta + np.radians(dth_deg)
+        a = f * np.cos(theta)
+        b = f * np.sin(theta)
+
+        # Template positions (relative, no translation)
+        pts = np.column_stack([
+            a * P[:, 0] - b * P[:, 1],
+            b * P[:, 0] + a * P[:, 1]
+        ])
+
+        # Shift to non-negative coords for pattern image
+        mn = pts.min(axis=0)
+        pts_s = pts - mn
+
+        pat_w = int(np.ceil(pts_s[:, 0].max())) + 2
+        pat_h = int(np.ceil(pts_s[:, 1].max())) + 2
+        pattern = np.zeros((pat_h, pat_w))
+        for px_i, py_i in pts_s:
+            ix, iy = int(round(px_i)), int(round(py_i))
+            if 0 <= iy < pat_h and 0 <= ix < pat_w:
+                pattern[iy, ix] = 1.0
+
+        # Cross-correlation: peak = translation maximising sum of
+        # z-scores at the 19 well positions.
+        corr = fftconvolve(z_clean, pattern[::-1, ::-1], mode='full')
+
+        # Constrain: R2C1 must stay inside the mosaic (the scan
+        # starts at R2C1, so it can't be off the right edge).
+        # For each output pixel (oy, ox), R2C1's mosaic-x is:
+        #   ox - (pat_w-1) - mn[0] + pts[i_r2c1, 0]
+        # and mosaic-y analogously.  Mask positions placing R2C1
+        # outside the image.
+        r2c1_ox = pts[i_r2c1, 0] - mn[0]   # offset in pattern
+        r2c1_oy = pts[i_r2c1, 1] - mn[1]
+        H, W = z.shape
+        ch, cw = corr.shape
+        ox = np.arange(cw) - (pat_w - 1)
+        oy = np.arange(ch) - (pat_h - 1)
+        r2c1_x = ox + r2c1_ox
+        r2c1_y = oy + r2c1_oy
+        x_ok = (r2c1_x >= 0) & (r2c1_x < W)
+        y_ok = (r2c1_y >= 0) & (r2c1_y < H)
+        corr[~y_ok, :] = -np.inf
+        corr[:, ~x_ok] = -np.inf
+
+        peak_yx = np.unravel_index(corr.argmax(), corr.shape)
+        score = corr[peak_yx]
+
+        if score > best_score:
+            best_score = score
+            t = np.array([
+                peak_yx[1] - (pat_w - 1) - mn[0],
+                peak_yx[0] - (pat_h - 1) - mn[1]
+            ])
+            best_params = (a, b, t, theta)
+
+    a, b, t, theta = best_params
+    h, w = mosaic.shape
+    snap_r = max(int(r_px * 0.3), 5)
+    margin = int(r_px)
+
+    # ---- initial snap to z-score peaks ----
+    def _snap_all(X):
+        snapped = {}
+        for i in range(len(labels)):
+            gx, gy = X[i]
+            ix, iy = int(round(gx)), int(round(gy))
+            if not (margin <= iy < h - margin and margin <= ix < w - margin):
+                continue
+            y0, y1 = max(0, iy - snap_r), min(h, iy + snap_r + 1)
+            x0, x1 = max(0, ix - snap_r), min(w, ix + snap_r + 1)
+            window = z[y0:y1, x0:x1]
+            z_val = float(window.max())
+            if z_val >= observed_z:
+                pk = np.unravel_index(window.argmax(), window.shape)
+                snapped[i] = (float(x0 + pk[1]), float(y0 + pk[0]), z_val)
+        return snapped
+
+    X = _transform(P, a, b, t)
+    snapped = _snap_all(X)
+
+    # ---- ensure R2C1 is the rightmost detected R2 well ----
+    # The scan starts at R2C1, so if R2C1 is not detected but other
+    # R2 wells are, the grid is shifted — slide it so the rightmost
+    # detected R2 well becomes R2C1.
+    r2_snapped = {i: snapped[i] for i in snapped
+                  if labels[i].startswith("R2")}
+    if r2_snapped and i_r2c1 not in r2_snapped:
+        rightmost_i = max(r2_snapped, key=lambda i: r2_snapped[i][0])
+        t = t + (X[rightmost_i] - X[i_r2c1])
+        X = _transform(P, a, b, t)
+        snapped = _snap_all(X)
+
+    # ---- refine grid from best detections ----
+    # Use the top-4 highest-scoring wells per row to refit (a, b, tx, ty)
+    # via least-squares.  A handful of accurate anchors beats many noisy
+    # edge detections.
+    r1_idx = sorted([i for i in snapped if labels[i].startswith("R1")],
+                    key=lambda i: -snapped[i][2])[:4]
+    r2_idx = sorted([i for i in snapped if labels[i].startswith("R2")],
+                    key=lambda i: -snapped[i][2])[:4]
+    fit_idx = r1_idx + r2_idx
+    if len(fit_idx) >= 3:
+        # Solve: [sx, sy] = [[u, -v, 1, 0], [v, u, 0, 1]] @ [a, b, tx, ty]
+        A_rows, b_rows = [], []
+        for i in fit_idx:
+            u, v = P[i]
+            sx, sy = snapped[i][0], snapped[i][1]
+            A_rows.append([u, -v, 1.0, 0.0])
+            A_rows.append([v,  u, 0.0, 1.0])
+            b_rows.extend([sx, sy])
+        A_mat = np.array(A_rows)
+        b_vec = np.array(b_rows)
+        params, *_ = np.linalg.lstsq(A_mat, b_vec, rcond=None)
+        a, b, t = params[0], params[1], params[2:4]
+        X = _transform(P, a, b, t)
+        # Re-snap with refined grid
+        snapped.clear()
+        for i in range(len(labels)):
+            gx, gy = X[i]
+            ix, iy = int(round(gx)), int(round(gy))
+            if not (margin <= iy < h - margin and margin <= ix < w - margin):
+                continue
+            y0, y1 = max(0, iy - snap_r), min(h, iy + snap_r + 1)
+            x0, x1 = max(0, ix - snap_r), min(w, ix + snap_r + 1)
+            window = z[y0:y1, x0:x1]
+            z_val = float(window.max())
+            if z_val >= observed_z:
+                pk = np.unravel_index(window.argmax(), window.shape)
+                snapped[i] = (float(x0 + pk[1]), float(y0 + pk[0]), z_val)
+
+    # ---- classify wells: observed vs predicted ----
+    wells, predicted, lattice_placed = [], [], []
+
+    for i, label in enumerate(labels):
+        if i in snapped:
+            sx, sy, z_val = snapped[i]
+            contrast, completeness = rim_stats(smooth, sy, sx, r_px)
+            wells.append(Well(label=label, cy=sy, cx=sx, r=r_px,
+                              score=z_val, contrast=contrast,
+                              completeness=completeness))
+        else:
+            gx, gy = X[i]
+            ix, iy = int(round(gx)), int(round(gy))
+            in_bounds = (margin <= iy < h - margin and
+                         margin <= ix < w - margin)
+            if in_bounds:
+                lattice_placed.append(label)
+            predicted.append(PredictedWell(label=label, cy=float(gy),
+                                           cx=float(gx), r=r_px))
+
+    scale = float(np.hypot(a, b))
+    info = dict(
+        scale=round(scale, 4),
+        rotation_deg=round(float(np.degrees(theta)
+                                 - (180.0 if abs(base_theta) > 1 else 0.0)),
+                           2),
+        orientation="prior",
+        feature_radius=round(r_px, 1),
+        n_observed=len(wells),
+        lattice_placed=lattice_placed,
+    )
+
+    if len(wells) < min_observed:
+        return [], [], info
+    return wells, predicted, info
+
+
+# --------------------------------------------------------------------------
 # CLI: build a template by running the ring-fitting pipeline
 # --------------------------------------------------------------------------
 

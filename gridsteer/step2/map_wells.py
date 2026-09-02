@@ -695,17 +695,21 @@ def main():
 
     well_radius = None
     if template is not None:
-        print("Detecting Wells (Whole-Layout Template Matching) ...")
         expected = None
         if reg.get("stage_gain") and template.get("stage_gain"):
-            # The run's own stage-to-pixel gain over the template
-            # scan's pins the zoom, so detection searches around the
-            # scale this scan is actually at.
             expected = reg["stage_gain"] / template["stage_gain"]
-            print(f"  Zoom Prior from the Stage Calibration: "
-                  f"Expected Scale {expected:.2f}")
-        wells, predicted, tinfo = match_layout(mosaic, count, template,
-                                               expected_scale=expected)
+
+        if expected is not None:
+            print("Detecting Wells (Prior-Anchored Layout Matching) ...")
+            print(f"  Scale Prior from Stage Calibration: "
+                  f"Expected Scale {expected:.3f}")
+            from .well_template import match_layout_prior
+            wells, predicted, tinfo = match_layout_prior(
+                mosaic, count, template, expected)
+        else:
+            print("Detecting Wells (Whole-Layout Template Matching) ...")
+            wells, predicted, tinfo = match_layout(mosaic, count, template,
+                                                   expected_scale=expected)
         if not wells:
             no_wells_exit()
         well_radius = tinfo['feature_radius']
