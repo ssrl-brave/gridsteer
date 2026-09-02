@@ -170,5 +170,18 @@ proc fourCorners_start { args } {
     eval exec $pyCmd
 
     send_operation_update "four_corners.json ready at $outfile"
+
+    # Register the refined 4-point grid in DCSS via gridGroupConfig
+    # Each result is {name wa wb x y z phi} — extract {x y z phi} for each corner
+    set p0 [list [lindex [lindex $results 0] 3] [lindex [lindex $results 0] 4] [lindex [lindex $results 0] 5] [lindex [lindex $results 0] 6]]
+    set p1 [list [lindex [lindex $results 1] 3] [lindex [lindex $results 1] 4] [lindex [lindex $results 1] 5] [lindex [lindex $results 1] 6]]
+    set p2 [list [lindex [lindex $results 2] 3] [lindex [lindex $results 2] 4] [lindex [lindex $results 2] 5] [lindex [lindex $results 2] 6]]
+    set p3 [list [lindex [lindex $results 3] 3] [lindex [lindex $results 3] 4] [lindex [lindex $results 3] 5] [lindex [lindex $results 3] 6]]
+
+    send_operation_update "Registering 4-point grid: $p0 $p1 $p2 $p3"
+    set ggcOp [start_waitable_operation gridGroupConfig add_4PointGrid $p0 $p1 $p2 $p3 sample]
+    wait_for_operation_to_finish $ggcOp
+
+    send_operation_update "4-point grid registered in DCSS"
     return OK
 }
