@@ -213,6 +213,15 @@ def register_frames(frames, meta=None, min_inliers: int = 15):
 
 def available_memory():
     """Bytes of memory the OS reports as allocatable, or None if unknown."""
+    # MemAvailable counts reclaimable page cache; SC_AVPHYS_PAGES (MemFree)
+    # does not and is often tiny on a long-running host.
+    try:
+        with open("/proc/meminfo") as fh:
+            for line in fh:
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1]) * 1024
+    except (OSError, ValueError, IndexError):
+        pass
     try:
         return os.sysconf("SC_AVPHYS_PAGES") * os.sysconf("SC_PAGE_SIZE")
     except (ValueError, OSError, AttributeError):

@@ -20,10 +20,41 @@ proc fourCorners_initialize { } {
 }
 
 
+proc fourCorners_sampleFocus { focus_range focus_iters } {
+    # For beamlines without an inline camera: zoom the sample (off-axis)
+    # camera to MedL, autofocus on it, then restore the original zoom so
+    # refine_center sees the same pixel scale as the optCirc scan.
+    global offaxis_url
+    set zoomDev [::config getStr sampleDigitalZoom]
+    if { $zoomDev eq "" } {
+        set zoomDev camera_zoom
+    }
+    variable $zoomDev
+    set zStart [set $zoomDev]
+    set zMedL [::config getStr bluice.zoomMedLSample]
+    if { $zMedL eq "" } {
+        set zMedL 3.0
+    }
+
+    send_operation_update "Zooming $zoomDev $zStart -> $zMedL (MedL) for sample-camera autofocus"
+    move $zoomDev to $zMedL
+    wait_for_devices $zoomDev
+    # Let the camera stream catch up with the new zoom
+    after 2000
+
+    goCirc_autofocus $focus_range $focus_iters "http://pxgpu03:8003" sample $offaxis_url
+
+    move $zoomDev to $zStart
+    wait_for_devices $zoomDev
+    after 2000
+    send_operation_update "Restored $zoomDev to $zStart"
+}
+
+
 proc fourCorners_start { args } {
     # --- Help ---
     if { [llength $args] > 0 && ([lindex $args 0] eq "-h" || [lindex $args 0] eq "--help") } {
-        send_operation_update "Usage: fourCorners <dirname> ?--re-detect-radius? ?--dry-run? ?--focus-range N? ?--focus-iters N?"
+        send_operation_update "Usage: fourCorners <dirname> ?--re-detect-radius? ?--dry-run? ?--focus-range N? ?--focus-iters N? ?--inline-focus?"
         send_operation_update "  dirname              — scan directory (must contain output_json_2/)"
         send_operation_update "  --re-detect-radius   — auto-detect radius from live camera instead"
         send_operation_update "                         of using the value in wells.json (optional)"
@@ -31,6 +62,9 @@ proc fourCorners_start { args } {
         send_operation_update "                         only record positions and write diagnostics"
         send_operation_update "  --focus-range <um>   — autofocus Z search range in um (default: 500)"
         send_operation_update "  --focus-iters <n>    — max autofocus iterations (default: 12)"
+        send_operation_update "  --inline-focus       — autofocus on the inline camera at phi+90"
+        send_operation_update "                         (default: sample camera at MedL zoom, face-on,"
+        send_operation_update "                         then restore the previous zoom)"
         send_operation_update ""
         send_operation_update "Moves to four corner wells — (2,1), (1,1), (1,9), (2,10) — and"
         send_operation_update "refines each position using ring correlation on the off-axis camera."
@@ -45,6 +79,7 @@ proc fourCorners_start { args } {
     set dryrun 0
     set focus_range 500
     set focus_iters 12
+    set sample_focus 1
     set i 0
     while {$i < [llength $args]} {
         set a [lindex $args $i]
@@ -58,6 +93,8 @@ proc fourCorners_start { args } {
         } elseif { $a eq "--focus-iters" } {
             incr i
             set focus_iters [lindex $args $i]
+        } elseif { $a eq "--inline-focus" } {
+            set sample_focus 0
         } elseif { $dirname eq "" } {
             set dirname $a
         }
@@ -118,15 +155,21 @@ proc fourCorners_start { args } {
         move gonio_phi to $well_phi
         wait_for_devices sample_x sample_y sample_z gonio_phi
 
-        # Autofocus on the inline camera: rotate +90, focus, rotate back
-        set phi_plus_90 [expr {$well_phi + 90.0}]
-        move gonio_phi to $phi_plus_90
-        wait_for_devices gonio_phi
-        send_operation_update "Corner $name: autofocusing on inline camera ..."
-        goCirc_autofocus $focus_range $focus_iters
-        after 1000
-        move gonio_phi to $well_phi
-        wait_for_devices gonio_phi
+        if { $sample_focus } {
+            # Sample camera is already face-on at well_phi: focus there at MedL
+            send_operation_update "Corner $name: autofocusing on sample camera (MedL) ..."
+            fourCorners_sampleFocus $focus_range $focus_iters
+        } else {
+            # Autofocus on the inline camera: rotate +90, focus, rotate back
+            set phi_plus_90 [expr {$well_phi + 90.0}]
+            move gonio_phi to $phi_plus_90
+            wait_for_devices gonio_phi
+            send_operation_update "Corner $name: autofocusing on inline camera ..."
+            goCirc_autofocus $focus_range $focus_iters
+            after 1000
+            move gonio_phi to $well_phi
+            wait_for_devices gonio_phi
+        }
 
         # Let vibration settle and camera stream catch up
         after 1000

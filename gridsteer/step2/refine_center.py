@@ -69,8 +69,15 @@ def detect_radius(img, r_min=50, r_max=200, step=5):
     return best_r
 
 
-def refine_well_center(img, radius=None, search_radius=None):
+def refine_well_center(img, radius=None, search_radius=None,
+                       max_nudge_frac=0.15):
     """Find the offset from image center to the well center.
+
+    Uses edge-magnitude ring correlation: Sobel gradient magnitudes are
+    correlated with a zero-mean annulus kernel.  This targets the
+    physical well rim (a strong circular edge) and is far less sensitive
+    to drop content, specular highlights, and interior lighting than the
+    raw-intensity approach.
 
     Parameters
     ----------
@@ -79,6 +86,9 @@ def refine_well_center(img, radius=None, search_radius=None):
     search_radius : int, max pixels to search from center.
                     Default: radius/3 (the well is already approximately
                     centered, so we only need a small search window).
+    max_nudge_frac : float, maximum displacement as fraction of radius.
+                     Prevents wild corrections when the target function
+                     locks onto a non-rim feature.  Default 0.15.
 
     Returns
     -------
@@ -93,14 +103,18 @@ def refine_well_center(img, radius=None, search_radius=None):
     if search_radius is None:
         search_radius = max(20, int(radius / 3))
 
+    max_nudge = max(10.0, radius * max_nudge_frac)
+
     smooth = cv2.GaussianBlur(img.astype(np.float32), (0, 0), 2.0)
+
+    # Edge magnitude — highlights rim features, insensitive to drop
+    # interior intensity and lighting polarity (no abs() needed).
+    gx = cv2.Sobel(smooth, cv2.CV_32F, 1, 0, ksize=3)
+    gy = cv2.Sobel(smooth, cv2.CV_32F, 0, 1, ksize=3)
+    edge_mag = np.hypot(gx, gy)
+
     kern = ring_kernel(radius)
-
-    resp = fftconvolve(smooth, kern[::-1, ::-1], mode="same")
-
-    # Use absolute response — the well rim may be darker or brighter
-    # than its surroundings depending on lighting
-    resp = np.abs(resp)
+    resp = fftconvolve(edge_mag, kern[::-1, ::-1], mode="same")
 
     h, w = resp.shape
     cy, cx = h // 2, w // 2
@@ -142,6 +156,14 @@ def refine_well_center(img, radius=None, search_radius=None):
 
     dx = sub_x - cx
     dy = sub_y - cy
+
+    # Cap displacement to prevent wild corrections on deformed wells
+    mag = np.hypot(dx, dy)
+    if mag > max_nudge:
+        scale = max_nudge / mag
+        dx *= scale
+        dy *= scale
+
     return dx, dy, float(radius)
 
 

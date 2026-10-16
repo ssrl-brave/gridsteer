@@ -89,8 +89,12 @@ proc goCirc_start { args } {
     return OK
 }
 
-proc goCirc_autofocus { {z_range 250} {max_iters 12} {serverUrl "http://pxgpu03:8003"} } {
+proc goCirc_autofocus { {z_range 250} {max_iters 12} {serverUrl "http://pxgpu03:8003"} {camera inline} {camUrl ""} } {
+    # camera: inline or sample (moveSampleOutVideo camera); camUrl defaults to the inline URL
     global inline_url
+    if { $camUrl eq "" } {
+        set camUrl $inline_url
+    }
     # 1. Initialize BO Focus
     set z_start 0.0
     send_operation_update "Initializing BO Autofocus (Range: +/- $z_range)..."
@@ -111,7 +115,7 @@ proc goCirc_autofocus { {z_range 250} {max_iters 12} {serverUrl "http://pxgpu03:
     for {set i 0} {$i < $max_iters} {incr i} {
         send_operation_update "Autofocus Iteration $i..."
 
-        set stepPayload "{\"url\": \"$inline_url\", \"iter\": $i, \"samp\": 2, \"med_size\": 3}"
+        set stepPayload "{\"url\": \"$camUrl\", \"iter\": $i, \"samp\": 2, \"med_size\": 3}"
         set stepCmd [list curl -s -X POST "$serverUrl/bo/focus_step" \
              -H "Content-Type: application/json" \
              -d $stepPayload]
@@ -130,7 +134,7 @@ proc goCirc_autofocus { {z_range 250} {max_iters 12} {serverUrl "http://pxgpu03:
             send_operation_update "Current: $current_virtual_z | Next: $next_z | Delta: $delta"
 
             # Execute physical move and wait
-            set move [start_waitable_operation moveSampleOutVideo inline $delta]
+            set move [start_waitable_operation moveSampleOutVideo $camera $delta]
             wait_for_operation_to_finish $move
 
             set current_virtual_z $next_z
@@ -152,7 +156,7 @@ proc goCirc_autofocus { {z_range 250} {max_iters 12} {serverUrl "http://pxgpu03:
             set final_delta [expr {$best_z - $current_virtual_z}]
             send_operation_update "Best Z found at $best_z. Homing move: $final_delta"
 
-            set move [start_waitable_operation moveSampleOutVideo inline $final_delta]
+            set move [start_waitable_operation moveSampleOutVideo $camera $final_delta]
             wait_for_operation_to_finish $move
         }
     }
