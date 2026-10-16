@@ -61,6 +61,14 @@ proc fourCorners_register { results } {
         set p$k [lrange [lindex $results $k] 3 5]
     }
 
+    # The grid snapshot is taken from the live view, so register at the
+    # corners' (face-on) phi; at another phi BluIce draws the grid squashed.
+    set corner_phi [lindex [lindex $results 0] 6]
+    send_operation_update "Moving gonio_phi to corner phi $corner_phi for the grid snapshot"
+    move gonio_phi to $corner_phi
+    wait_for_devices gonio_phi
+    after 1000
+
     send_operation_update "Registering 4-point grid: $p0 $p1 $p2 $p3"
     # Operation args lose one level of list braces in transit (namespace
     # eval in stoh_start_operation), so wrap each point once more to keep
@@ -77,7 +85,7 @@ proc fourCorners_register { results } {
 proc fourCorners_start { args } {
     # --- Help ---
     if { [llength $args] > 0 && ([lindex $args 0] eq "-h" || [lindex $args 0] eq "--help") } {
-        send_operation_update "Usage: fourCorners <dirname> ?--re-detect-radius? ?--dry-run? ?--focus-range N? ?--focus-iters N? ?--inline-focus? ?--from-json?"
+        send_operation_update "Usage: fourCorners <dirname> ?--re-detect-radius? ?--dry-run? ?--focus-range N? ?--focus-iters N? ?--inline-focus? ?--from-json? ?--from-optCirc?"
         send_operation_update "  dirname              — scan directory (must contain output_json_2/)"
         send_operation_update "  --re-detect-radius   — auto-detect radius from live camera instead"
         send_operation_update "                         of using the value in wells.json (optional)"
@@ -90,6 +98,8 @@ proc fourCorners_start { args } {
         send_operation_update "                         then restore the previous zoom)"
         send_operation_update "  --from-json          — skip the corner visits; register the 4-point grid"
         send_operation_update "                         from an existing output_json_2/four_corners.json"
+        send_operation_update "  --from-optCirc       — skip the corner visits; register the 4-point grid"
+        send_operation_update "                         from the optCirc mapping (no focus or snap)"
         send_operation_update ""
         send_operation_update "Moves to four corner wells — (2,1), (1,1), (1,9), (2,10) — and"
         send_operation_update "refines each position using ring correlation on the off-axis camera."
@@ -106,6 +116,7 @@ proc fourCorners_start { args } {
     set focus_iters 12
     set sample_focus 1
     set from_json 0
+    set from_optcirc 0
     set i 0
     while {$i < [llength $args]} {
         set a [lindex $args $i]
@@ -123,6 +134,8 @@ proc fourCorners_start { args } {
             set sample_focus 0
         } elseif { $a eq "--from-json" } {
             set from_json 1
+        } elseif { $a eq "--from-optCirc" } {
+            set from_optcirc 1
         } elseif { $dirname eq "" } {
             set dirname $a
         }
@@ -166,6 +179,23 @@ proc fourCorners_start { args } {
     if {![file exists $mapping_file]} {
         send_operation_update "ERROR: $mapping_file not found. Run optCirc first."
         return FAIL
+    }
+
+    if { $from_optcirc } {
+        # Corner positions straight from the optCirc mapping (as goCirc
+        # uses them); four_corners.json is left untouched
+        send_operation_update "Loading corners from $mapping_file (skipping corner visits)"
+        set results {}
+        for {set i 0} {$i < [llength $corners]} {incr i} {
+            set name [lindex $corner_names $i]
+            set wa [lindex [lindex $corners $i] 0]
+            set wb [lindex [lindex $corners $i] 1]
+            set pyOut [exec $pyExe -m gridsteer.step2.read $dirname $wa $wb]
+            scan $pyOut "%f %f %f %f" well_x well_y well_z well_phi
+            send_operation_update "Corner $name ($wa,$wb): x=$well_x y=$well_y z=$well_z phi=$well_phi"
+            lappend results [list $name $wa $wb $well_x $well_y $well_z $well_phi]
+        }
+        return [fourCorners_register $results]
     }
 
     # Get well radius: from wells.json by default, or auto-detect
