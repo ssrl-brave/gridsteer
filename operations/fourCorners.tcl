@@ -55,14 +55,18 @@ proc fourCorners_sampleFocus { focus_range focus_iters } {
 
 proc fourCorners_register { results } {
     # Register the refined 4-point grid in DCSS via gridGroupConfig
-    # Each result is {name wa wb x y z phi} — extract {x y z phi} for each corner
-    set p0 [list [lindex [lindex $results 0] 3] [lindex [lindex $results 0] 4] [lindex [lindex $results 0] 5] [lindex [lindex $results 0] 6]]
-    set p1 [list [lindex [lindex $results 1] 3] [lindex [lindex $results 1] 4] [lindex [lindex $results 1] 5] [lindex [lindex $results 1] 6]]
-    set p2 [list [lindex [lindex $results 2] 3] [lindex [lindex $results 2] 4] [lindex [lindex $results 2] 5] [lindex [lindex $results 2] 6]]
-    set p3 [list [lindex [lindex $results 3] 3] [lindex [lindex $results 3] 4] [lindex [lindex $results 3] 5] [lindex [lindex $results 3] 6]]
+    # Each result is {name wa wb x y z phi}. add_4PointGrid reads only
+    # {x y z} per corner; the grid angle comes from the corner layout.
+    foreach k {0 1 2 3} {
+        set p$k [lrange [lindex $results $k] 3 5]
+    }
 
     send_operation_update "Registering 4-point grid: $p0 $p1 $p2 $p3"
-    set ggcOp [start_waitable_operation gridGroupConfig add_4PointGrid $p0 $p1 $p2 $p3 sample]
+    # Operation args lose one level of list braces in transit (namespace
+    # eval in stoh_start_operation), so wrap each point once more to keep
+    # {x y z} intact; unwrapped, the 12 numbers arrive flat.
+    set ggcOp [start_waitable_operation gridGroupConfig add_4PointGrid \
+        [list $p0] [list $p1] [list $p2] [list $p3] sample]
     wait_for_operation_to_finish $ggcOp
 
     send_operation_update "4-point grid registered in DCSS"
