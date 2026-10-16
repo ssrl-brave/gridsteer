@@ -140,24 +140,29 @@ proc optCirc_start { args } {
     wait_for_devices sample_x sample_y sample_z gonio_phi
 
 	# Step 2: Map circular wells via whole-layout template matching.
-	# Runs on the pxgpu03 align server (the beamline host lacks the memory
-	# for the mosaic); the scan dir is on /data, shared by both machines.
+	# Runs on pxgpu03 over ssh (the beamline host lacks the memory for the
+	# mosaic); the scan dir is on /data, shared by both machines.
 	set outdir "$dirname/output_json_2"
-	set serverUrl "http://pxgpu03:8003"
-	send_operation_update "Running the optimizer to map out circular wells in the grid on $serverUrl ... "
-	set mapPayload "{\"data_dir\": \"$dirname\", \"outdir\": \"$outdir\"}"
-	set mapCmd [list curl -s --max-time 1000 -X POST "$serverUrl/optcirc/map_wells" \
-	         -H "Content-Type: application/json" -d $mapPayload]
-	if {[catch {exec {*}$mapCmd} mapRes]} {
-		send_operation_update "ERROR: could not reach $serverUrl/optcirc/map_wells: $mapRes"
+	set mapHost pxgpu03
+	# dirname goes into a remote shell command: allow plain path characters only
+	if {![regexp {^[A-Za-z0-9._/-]+$} $dirname]} {
+		send_operation_update "ERROR: dirname has characters not allowed for the remote run: $dirname"
 		return FAIL
 	}
-	if {[regexp {"message":\s*"([^"]*)"} $mapRes match mapMsg]} {
-		send_operation_update "map_wells: $mapMsg"
-	}
-	if {![regexp {"status":\s*"ok"} $mapRes]} {
-		send_operation_update "ERROR: map_wells failed on server: $mapRes"
+	set remoteCmd "cd /data/blctl && $pyExe -m gridsteer.step2.map_wells $dirname --outdir $outdir"
+	send_operation_update "Running the optimizer to map out circular wells in the grid on $mapHost ... "
+	send_operation_update "ssh $mapHost: $remoteCmd"
+	# 2>@1: stderr warnings are logged, not treated as failure; only a
+	# non-zero exit fails
+	if {[catch {exec ssh -o BatchMode=yes $mapHost $remoteCmd 2>@1} mapOut]} {
+		send_operation_update "ERROR: map_wells on $mapHost failed:"
+		foreach line [lrange [split $mapOut "\n"] end-15 end] {
+			send_operation_update "  $line"
+		}
 		return FAIL
+	}
+	foreach line [lrange [split $mapOut "\n"] end-3 end] {
+		send_operation_update "map_wells: $line"
 	}
 
 	# Verify mapping.json was produced (required by goCirc)
