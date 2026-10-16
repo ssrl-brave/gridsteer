@@ -31,7 +31,7 @@ import os
 import re
 import sys
 import warnings
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, replace
 from pathlib import Path
 
 import cv2
@@ -787,6 +787,7 @@ def main():
               float(np.mean([w.cy for w in wells])))
     mapping = fit_motor_pixel_map(Gs, meta, ref_xy)
     centering = None
+    centering_lattice = None
     if mapping is not None:
         print(f"  Fitted on {mapping.n_pairs} Frame Pairs; "
               f"R^2 per Motor Axis: {mapping.r2}")
@@ -794,6 +795,15 @@ def main():
             mapping, wells, predicted, Gs, meta, frames[0].shape)
         n = len(centering["well_centering_positions"])
         print(f"  Motor Centering Coordinates Computed for {n} Wells")
+        if lattice:
+            # Same conversion, but detected wells at their fitted-lattice
+            # position instead of their snap (predicted wells already are)
+            on_lattice = [replace(w, cx=lattice[w.label][0],
+                                  cy=lattice[w.label][1])
+                          if w.label in lattice else w for w in wells]
+            centering_lattice = motor_centering_positions(
+                mapping, on_lattice, predicted, Gs, meta, frames[0].shape)
+            centering_lattice["positions"] = "fitted lattice (all wells)"
     else:
         print("  Skipped: Stage Metadata Cannot Support the Fit")
 
@@ -810,6 +820,11 @@ def main():
             json.dump(centering, f, indent=2)
         with open(out / "mapping.json", "w") as f:
             json.dump(centering, f, indent=2)
+    if centering_lattice is not None:
+        if well_radius is not None:
+            centering_lattice["well_radius_px"] = round(well_radius, 1)
+        with open(out / "mappings_on_lattice.json", "w") as f:
+            json.dump(centering_lattice, f, indent=2)
     with open(out / "tracks.csv", "w", newline="") as f:
         wr = csv.DictWriter(f, fieldnames=list(records[0].keys()))
         wr.writeheader()

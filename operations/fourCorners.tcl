@@ -85,7 +85,7 @@ proc fourCorners_register { results } {
 proc fourCorners_start { args } {
     # --- Help ---
     if { [llength $args] > 0 && ([lindex $args 0] eq "-h" || [lindex $args 0] eq "--help") } {
-        send_operation_update "Usage: fourCorners <dirname> ?--re-detect-radius? ?--dry-run? ?--focus-range N? ?--focus-iters N? ?--inline-focus? ?--from-json? ?--from-optCirc?"
+        send_operation_update "Usage: fourCorners <dirname> ?--re-detect-radius? ?--dry-run? ?--focus-range N? ?--focus-iters N? ?--inline-focus? ?--from-json? ?--from-optCirc? ?--from-optCirc-lattice?"
         send_operation_update "  dirname              — scan directory (must contain output_json_2/)"
         send_operation_update "  --re-detect-radius   — auto-detect radius from live camera instead"
         send_operation_update "                         of using the value in wells.json (optional)"
@@ -100,6 +100,8 @@ proc fourCorners_start { args } {
         send_operation_update "                         from an existing output_json_2/four_corners.json"
         send_operation_update "  --from-optCirc       — skip the corner visits; register the 4-point grid"
         send_operation_update "                         from the optCirc mapping (no focus or snap)"
+        send_operation_update "  --from-optCirc-lattice — as --from-optCirc, but all four corners on the"
+        send_operation_update "                         fitted lattice (output_json_2/mappings_on_lattice.json)"
         send_operation_update ""
         send_operation_update "Moves to four corner wells — (2,1), (1,1), (1,9), (2,10) — and"
         send_operation_update "refines each position using ring correlation on the off-axis camera."
@@ -117,6 +119,7 @@ proc fourCorners_start { args } {
     set sample_focus 1
     set from_json 0
     set from_optcirc 0
+    set optcirc_lattice 0
     set i 0
     while {$i < [llength $args]} {
         set a [lindex $args $i]
@@ -136,6 +139,9 @@ proc fourCorners_start { args } {
             set from_json 1
         } elseif { $a eq "--from-optCirc" } {
             set from_optcirc 1
+        } elseif { $a eq "--from-optCirc-lattice" } {
+            set from_optcirc 1
+            set optcirc_lattice 1
         } elseif { $dirname eq "" } {
             set dirname $a
         }
@@ -183,14 +189,25 @@ proc fourCorners_start { args } {
 
     if { $from_optcirc } {
         # Corner positions straight from the optCirc mapping (as goCirc
-        # uses them); four_corners.json is left untouched
+        # uses them); four_corners.json is left untouched. With the
+        # lattice flag, detected corners use their fitted-lattice position
+        # instead of their snap.
+        set readFlag ""
+        if { $optcirc_lattice } {
+            set mapping_file "$dirname/output_json_2/mappings_on_lattice.json"
+            set readFlag "--lattice"
+            if {![file exists $mapping_file]} {
+                send_operation_update "ERROR: $mapping_file not found. Re-run the optCirc mapping with the current gridsteer."
+                return FAIL
+            }
+        }
         send_operation_update "Loading corners from $mapping_file (skipping corner visits)"
         set results {}
         for {set i 0} {$i < [llength $corners]} {incr i} {
             set name [lindex $corner_names $i]
             set wa [lindex [lindex $corners $i] 0]
             set wb [lindex [lindex $corners $i] 1]
-            set pyOut [exec $pyExe -m gridsteer.step2.read $dirname $wa $wb]
+            set pyOut [exec $pyExe -m gridsteer.step2.read $dirname $wa $wb {*}$readFlag]
             scan $pyOut "%f %f %f %f" well_x well_y well_z well_phi
             send_operation_update "Corner $name ($wa,$wb): x=$well_x y=$well_y z=$well_z phi=$well_phi"
             lappend results [list $name $wa $wb $well_x $well_y $well_z $well_phi]
