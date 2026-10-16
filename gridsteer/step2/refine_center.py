@@ -10,6 +10,7 @@ Usage:
     # prints: dx_px dy_px radius_px
 """
 
+import os
 import sys
 import numpy as np
 import cv2
@@ -218,4 +219,7 @@ if __name__ == "__main__":
     dx, dy, r_used = refine_well_center(img, radius)
     if save_path:
         save_diagnostic(img, r_used, dx, dy, save_path, label=label)
+        # Untouched frame too, so the refinement can be re-run offline
+        root, ext = os.path.splitext(save_path)
+        cv2.imwrite(f"{root}_raw{ext or '.png'}", img)
     print(f"{dx:.2f} {dy:.2f} {r_used:.1f}")
