@@ -18,7 +18,7 @@ proc autoFocus_initialize { } {
 }
 
 
-proc autoFocus_start { {move_type "inline" } {range 250} {iters 12} {server_url "http://pxgpu03:8003"} } {
+proc autoFocus_start { {move_type "inline" } {range 500} {iters 20} {server_url "http://pxgpu03:8003"} } {
     global af_offaxis_url
     global af_inline_url
 
@@ -26,8 +26,8 @@ proc autoFocus_start { {move_type "inline" } {range 250} {iters 12} {server_url 
     if { $move_type eq "-h" || $move_type eq "--help" } {
         send_operation_update "Usage: autoFocus ?camera? ?range? ?iters? ?server_url?"
         send_operation_update "  camera      — inline or sample (default: inline)"
-        send_operation_update "  range       — focus search range in um, +/- about the start (default: 250)"
-        send_operation_update "  iters       — max Bayesian optimization iterations (default: 12)"
+        send_operation_update "  range       — focus search range in um, +/- about the start (default: 500)"
+        send_operation_update "  iters       — max Bayesian optimization iterations (default: 20)"
         send_operation_update "  server_url  — alignment server (default: http://pxgpu03:8003)"
         send_operation_update ""
         send_operation_update "Bayesian-optimization autofocus. Scores the chosen camera's image"

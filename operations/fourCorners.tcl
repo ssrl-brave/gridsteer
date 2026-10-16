@@ -20,7 +20,7 @@ proc fourCorners_initialize { } {
 }
 
 
-proc fourCorners_sampleFocus { focus_range focus_iters } {
+proc fourCorners_sampleFocus { focus_range focus_iters focus_server } {
     # For beamlines without an inline camera: zoom the sample (off-axis)
     # camera to MedL, autofocus on it, then restore the original zoom so
     # refine_center sees the same pixel scale as the optCirc scan.
@@ -43,7 +43,7 @@ proc fourCorners_sampleFocus { focus_range focus_iters } {
 
     # Same path as running "autoFocus sample": BO on the off-axis camera,
     # moving the sample depth-wise along that camera's view axis
-    set afOp [start_waitable_operation autoFocus sample $focus_range $focus_iters]
+    set afOp [start_waitable_operation autoFocus sample $focus_range $focus_iters $focus_server]
     wait_for_operation_to_finish $afOp
 
     move $zoomDev to $zStart
@@ -85,17 +85,20 @@ proc fourCorners_register { results } {
 proc fourCorners_start { args } {
     # --- Help ---
     if { [llength $args] > 0 && ([lindex $args 0] eq "-h" || [lindex $args 0] eq "--help") } {
-        send_operation_update "Usage: fourCorners <dirname> ?--re-detect-radius? ?--dry-run? ?--focus-range N? ?--focus-iters N? ?--inline-focus? ?--from-json? ?--from-optCirc? ?--from-optCirc-lattice?"
+        send_operation_update "Usage: fourCorners <dirname> ?--re-detect-radius? ?--dry-run? ?--focus-range N? ?--focus-iters N? ?--focus-server URL? ?--sample-focus? ?--inline-phi-offset DEG? ?--from-json? ?--from-optCirc? ?--from-optCirc-lattice?"
         send_operation_update "  dirname              — scan directory (must contain output_json_2/)"
         send_operation_update "  --re-detect-radius   — auto-detect radius from live camera instead"
         send_operation_update "                         of using the value in wells.json (optional)"
         send_operation_update "  --dry-run            — move to each well but skip the nudge;"
         send_operation_update "                         only record positions and write diagnostics"
         send_operation_update "  --focus-range <um>   — autofocus Z search range in um (default: 500)"
-        send_operation_update "  --focus-iters <n>    — max autofocus iterations (default: 12)"
-        send_operation_update "  --inline-focus       — autofocus on the inline camera at phi+90"
-        send_operation_update "                         (default: sample camera at MedL zoom, face-on,"
-        send_operation_update "                         then restore the previous zoom)"
+        send_operation_update "  --focus-iters <n>    — max autofocus iterations (default: 20)"
+        send_operation_update "  --focus-server <url> — alignment server for autofocus (default: http://pxgpu03:8003)"
+        send_operation_update "  --sample-focus       — autofocus on the sample camera at MedL zoom, face-on"
+        send_operation_update "                         (no rotation), then restore the previous zoom; for"
+        send_operation_update "                         beamlines without an inline camera (e.g. BL7-1)."
+        send_operation_update "                         Default: inline camera at phi+offset (--inline-focus)"
+        send_operation_update "  --inline-phi-offset <deg> — phi rotation for inline focus: 90 or -90 (default: 90)"
         send_operation_update "  --from-json          — skip the corner visits; register the 4-point grid"
         send_operation_update "                         from an existing output_json_2/four_corners.json"
         send_operation_update "  --from-optCirc       — skip the corner visits; register the 4-point grid"
@@ -115,8 +118,10 @@ proc fourCorners_start { args } {
     set redetect 0
     set dryrun 0
     set focus_range 500
-    set focus_iters 12
-    set sample_focus 1
+    set focus_iters 20
+    set focus_server "http://pxgpu03:8003"
+    set inline_phi_offset 90
+    set sample_focus 0
     set from_json 0
     set from_optcirc 0
     set optcirc_lattice 0
@@ -133,8 +138,16 @@ proc fourCorners_start { args } {
         } elseif { $a eq "--focus-iters" } {
             incr i
             set focus_iters [lindex $args $i]
+        } elseif { $a eq "--focus-server" } {
+            incr i
+            set focus_server [lindex $args $i]
+        } elseif { $a eq "--inline-phi-offset" } {
+            incr i
+            set inline_phi_offset [lindex $args $i]
         } elseif { $a eq "--inline-focus" } {
             set sample_focus 0
+        } elseif { $a eq "--sample-focus" } {
+            set sample_focus 1
         } elseif { $a eq "--from-json" } {
             set from_json 1
         } elseif { $a eq "--from-optCirc" } {
@@ -250,14 +263,14 @@ proc fourCorners_start { args } {
         if { $sample_focus } {
             # Sample camera is already face-on at well_phi: focus there at MedL
             send_operation_update "Corner $name: autofocusing on sample camera (MedL) ..."
-            fourCorners_sampleFocus $focus_range $focus_iters
+            fourCorners_sampleFocus $focus_range $focus_iters $focus_server
         } else {
-            # Autofocus on the inline camera: rotate +90, focus, rotate back
-            set phi_plus_90 [expr {$well_phi + 90.0}]
-            move gonio_phi to $phi_plus_90
+            # Autofocus on the inline camera: rotate to face-on, focus, rotate back
+            set phi_inline [expr {$well_phi + $inline_phi_offset}]
+            move gonio_phi to $phi_inline
             wait_for_devices gonio_phi
             send_operation_update "Corner $name: autofocusing on inline camera ..."
-            set afOp [start_waitable_operation autoFocus inline $focus_range $focus_iters]
+            set afOp [start_waitable_operation autoFocus inline $focus_range $focus_iters $focus_server]
             wait_for_operation_to_finish $afOp
             after 1000
             move gonio_phi to $well_phi
