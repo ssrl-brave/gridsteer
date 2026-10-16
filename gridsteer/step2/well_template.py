@@ -18,6 +18,11 @@ response, sweep the layout over scale and orientation with FFT
 translation scoring, polish the top candidates, and pick the winner by
 verified evidence.
 
+match_layout_prior (used by map_wells.py when the scan carries a stage
+calibration): the same rim-coverage response, but the scale comes from
+the stage-calibration prior and the mounting orientation from the
+caller (map_wells.py --orientation), so no orientation duel is run.
+
 Usage (template building):
     python -m gridsteer.step2.well_template data/Step2TestData/mapper15 \
         --out gridsteer/step2/xmed1_layout_template.json
@@ -35,6 +40,12 @@ import numpy as np
 from .predict_wells import ROW_COUNTS, PredictedWell, row_col
 
 DEFAULT_TEMPLATE_PATH = Path(__file__).with_name("xmed1_layout_template.json")
+
+# Tray mounting orientations for the prior-anchored matcher, named by the
+# image corner the R1C1 well sits in.  The two are vertical flips of each
+# other; "bottom-right" is the mount the pipeline was developed on.
+ORIENTATION_DEFAULT = "bottom-right"
+ORIENTATIONS = ("bottom-right", "upper-right")
 
 
 def _mirror_columns(label: str) -> str:
@@ -361,6 +372,16 @@ MIN_ARC_COMPLETENESS = 0.55
 # Below this, even the snap's along-arc component is unreliable and the
 # well contributes nothing to the fit.
 MIN_PARTIAL_RIM_VISIBILITY = 0.4
+
+# Spacing check (match_layout_prior): a neighbour gap is rejected beyond
+# this many standard deviations, where one deviation is the gap's own
+# RMS -- sqrt(2) times the template's per-well lattice precision, since
+# a gap differences two independently placed wells.  Three is the usual
+# outlier bound.  Measured on the test scans, neighbour gaps of real
+# wells spread to ~3-4 per-well RMS on wide mosaics (registration scale
+# drift), while tray corners and margin grooves snapped as wells sit at
+# 5-8; a bar of one per-well RMS rejected real wells routinely.
+SPACING_SIGMAS = 3.0
 
 
 def _evidence_cap(z, valid):
@@ -877,16 +898,37 @@ def match_layout(mosaic, count, template, observed_z=3.0, anchor_z=2.5,
 # --------------------------------------------------------------------------
 
 def match_layout_prior(mosaic, count, template, expected_scale,
-                       observed_z=3.0, min_observed=2):
+                       observed_z=3.0, min_observed=2,
+                       orientation=ORIENTATION_DEFAULT):
     """Match well layout using known physical constraints.
 
-    Uses the stage-calibration scale prior and known tray orientation
-    (R2/10-well row on top, R1/9-well row on bottom, C1 rightmost).
-    Bypasses the orientation duel and column anchoring of match_layout(),
-    which can fail on grids with deformed or irregular wells.
+    Uses the stage-calibration scale prior and a tray orientation given
+    by the caller instead of detected from the image.  Bypasses the
+    orientation duel and column anchoring of match_layout(), which can
+    fail on grids with deformed or irregular wells.
 
-    Returns (wells, predicted, info) in the same format as match_layout().
+    ``orientation`` names the image corner holding R1C1 (C1 is always
+    rightmost):
+
+    - ``"bottom-right"`` (default): R2/10-well row on top, R1/9-well
+      row on the bottom.
+    - ``"upper-right"``: the vertical flip of the above -- R1/9-well row
+      on top, R2/10-well row on the bottom.
+
+    The scan is assumed to start at the upper-right well of the image
+    (R2C1 for the default mount, R1C1 for the flipped one), which
+    anchors the translation search and the column slide below.
+
+    Returns (wells, predicted, info) in the same format as
+    match_layout(): observed wells at their snapped positions (wells
+    the mosaic edge cuts off included), the rest at the fitted
+    template positions; detections dropped by the spacing check are
+    listed in info["spacing_rejected"] and reported as predicted.
     """
+    if orientation not in ORIENTATIONS:
+        raise ValueError(f"orientation must be one of {ORIENTATIONS}, "
+                         f"got {orientation!r}")
+    r1_on_top = orientation == "upper-right"
     from skimage.filters import gaussian
     from scipy.signal import fftconvolve
     from .map_wells import SMOOTH_SIGMA, Well, rim_stats
@@ -904,10 +946,15 @@ def match_layout_prior(mosaic, count, template, expected_scale,
     z = _coverage_response(smooth, valid, r_px)
     z_clean = np.nan_to_num(z, nan=0.0)
 
-    # ---- base angle: R2 on top (smaller y) ----
-    # The template has R2 below R1 at theta=0, so theta=pi flips R2 to
-    # the top.  The 180-degree flip also reverses the column order in
-    # the image, so we mirror column labels (C1 becomes rightmost).
+    # ---- base angle: put the requested row on top (smaller y) ----
+    # The template has R1 above R2 at theta=0 with C1 rightmost, i.e.
+    # R1C1 in the upper-right corner, so that orientation is the
+    # template as-is.  theta=pi flips R2 to the top for the default
+    # (bottom-right) orientation, but the 180-degree rotation also
+    # reverses the column order in the image, so the column labels are
+    # mirrored (C1 becomes rightmost again).  Because the layout is
+    # left-right symmetric, this rotation + mirror is exactly the
+    # vertical flip that relates the two mounts.
     i_r2c1 = labels.index("R2C1")
     i_r1c1 = labels.index("R1C1")
 
@@ -917,14 +964,20 @@ def match_layout_prior(mosaic, count, template, expected_scale,
         c, s = np.cos(th), np.sin(th)
         r2c1_y = s * P[i_r2c1, 0] + c * P[i_r2c1, 1]
         r1c1_y = s * P[i_r1c1, 0] + c * P[i_r1c1, 1]
-        if r2c1_y < r1c1_y:
+        if (r1c1_y < r2c1_y) == r1_on_top:
             base_theta = th
             break
 
     flipped = abs(base_theta) > 1  # True when base is ~pi
     if flipped:
         labels = [_mirror_columns(l) for l in labels]
-        i_r2c1 = labels.index("R2C1")
+
+    # The scan starts at the upper-right well of the image: C1 of
+    # whichever row is on top.  That well anchors the translation
+    # search and the column slide below.
+    anchor_row = "R1" if r1_on_top else "R2"
+    anchor_label = anchor_row + "C1"
+    i_anchor = labels.index(anchor_label)
 
     # ---- sweep small rotations, FFT cross-correlation for each ----
     best_score = -np.inf
@@ -957,22 +1010,22 @@ def match_layout_prior(mosaic, count, template, expected_scale,
         # z-scores at the 19 well positions.
         corr = fftconvolve(z_clean, pattern[::-1, ::-1], mode='full')
 
-        # Constrain: R2C1 must stay inside the mosaic (the scan
-        # starts at R2C1, so it can't be off the right edge).
-        # For each output pixel (oy, ox), R2C1's mosaic-x is:
-        #   ox - (pat_w-1) - mn[0] + pts[i_r2c1, 0]
-        # and mosaic-y analogously.  Mask positions placing R2C1
-        # outside the image.
-        r2c1_ox = pts[i_r2c1, 0] - mn[0]   # offset in pattern
-        r2c1_oy = pts[i_r2c1, 1] - mn[1]
+        # Constrain: the anchor well (the scan's starting well) must
+        # stay inside the mosaic -- it can't be off the right edge.
+        # For each output pixel (oy, ox), the anchor's mosaic-x is:
+        #   ox - (pat_w-1) - mn[0] + pts[i_anchor, 0]
+        # and mosaic-y analogously.  Mask positions placing the
+        # anchor outside the image.
+        anchor_ox = pts[i_anchor, 0] - mn[0]   # offset in pattern
+        anchor_oy = pts[i_anchor, 1] - mn[1]
         H, W = z.shape
         ch, cw = corr.shape
         ox = np.arange(cw) - (pat_w - 1)
         oy = np.arange(ch) - (pat_h - 1)
-        r2c1_x = ox + r2c1_ox
-        r2c1_y = oy + r2c1_oy
-        x_ok = (r2c1_x >= 0) & (r2c1_x < W)
-        y_ok = (r2c1_y >= 0) & (r2c1_y < H)
+        anchor_x = ox + anchor_ox
+        anchor_y = oy + anchor_oy
+        x_ok = (anchor_x >= 0) & (anchor_x < W)
+        y_ok = (anchor_y >= 0) & (anchor_y < H)
         corr[~y_ok, :] = -np.inf
         corr[:, ~x_ok] = -np.inf
 
@@ -990,15 +1043,31 @@ def match_layout_prior(mosaic, count, template, expected_scale,
     a, b, t, theta = best_params
     h, w = mosaic.shape
     snap_r = max(int(r_px * 0.3), 5)
-    margin = int(r_px)
 
-    # ---- initial snap to z-score peaks ----
+    # ---- snapping ----
+    # A layout position is a detection when the response within snap_r
+    # of it reaches observed_z.  How much of its rim the mosaic shows
+    # (vis) decides what the detection is good for.  A fully visible
+    # rim snaps without bias: it anchors the lattice fit, is
+    # spacing-checked and pins the column anchoring.  A rim the mosaic
+    # edge cuts is still reported as observed at its peak, but that
+    # peak can drift toward the visible side and cannot be vetted, so
+    # it neither anchors the fit nor enters the spacing check nor pins
+    # the columns.  Below MIN_PARTIAL_RIM_VISIBILITY too little of
+    # the ring is seen to tell a well from the border.  There is no
+    # fixed exclusion margin: a well merely clipped by the mosaic
+    # border used to be discarded outright, which left border rows
+    # unreported and let the column anchoring fire on a row whose C1
+    # had only been clipped.
     def _snap_all(X):
         snapped = {}
         for i in range(len(labels)):
             gx, gy = X[i]
             ix, iy = int(round(gx)), int(round(gy))
-            if not (margin <= iy < h - margin and margin <= ix < w - margin):
+            if not (0 <= iy < h and 0 <= ix < w):
+                continue
+            vis = _rim_visibility(valid, gx, gy, r_px)
+            if vis < MIN_PARTIAL_RIM_VISIBILITY:
                 continue
             y0, y1 = max(0, iy - snap_r), min(h, iy + snap_r + 1)
             x0, x1 = max(0, ix - snap_r), min(w, ix + snap_r + 1)
@@ -1006,81 +1075,238 @@ def match_layout_prior(mosaic, count, template, expected_scale,
             z_val = float(window.max())
             if z_val >= observed_z:
                 pk = np.unravel_index(window.argmax(), window.shape)
-                snapped[i] = (float(x0 + pk[1]), float(y0 + pk[0]), z_val)
+                snapped[i] = (float(x0 + pk[1]), float(y0 + pk[0]),
+                              z_val, vis)
         return snapped
 
-    X = _transform(P, a, b, t)
-    snapped = _snap_all(X)
+    def _full(snapped):
+        return [i for i in snapped
+                if snapped[i][3] >= FULL_RIM_VISIBILITY]
 
-    # ---- ensure R2C1 is the rightmost detected R2 well ----
-    # The scan starts at R2C1, so if R2C1 is not detected but other
-    # R2 wells are, the grid is shifted — slide it so the rightmost
-    # detected R2 well becomes R2C1.
-    r2_snapped = {i: snapped[i] for i in snapped
-                  if labels[i].startswith("R2")}
-    if r2_snapped and i_r2c1 not in r2_snapped:
-        rightmost_i = max(r2_snapped, key=lambda i: r2_snapped[i][0])
-        t = t + (X[rightmost_i] - X[i_r2c1])
-        X = _transform(P, a, b, t)
-        snapped = _snap_all(X)
-
-    # ---- refine grid from best detections ----
-    # Use the top-4 highest-scoring wells per row to refit (a, b, tx, ty)
-    # via least-squares.  A handful of accurate anchors beats many noisy
-    # edge detections.
-    r1_idx = sorted([i for i in snapped if labels[i].startswith("R1")],
-                    key=lambda i: -snapped[i][2])[:4]
-    r2_idx = sorted([i for i in snapped if labels[i].startswith("R2")],
-                    key=lambda i: -snapped[i][2])[:4]
-    fit_idx = r1_idx + r2_idx
-    if len(fit_idx) >= 3:
-        # Solve: [sx, sy] = [[u, -v, 1, 0], [v, u, 0, 1]] @ [a, b, tx, ty]
+    def _fit_lattice(snapped, idx):
+        """Least-squares similarity (a, b, t) through the snapped
+        positions of idx: [sx, sy] = [[u, -v, 1, 0], [v, u, 0, 1]] @
+        [a, b, tx, ty]."""
         A_rows, b_rows = [], []
-        for i in fit_idx:
+        for i in idx:
             u, v = P[i]
             sx, sy = snapped[i][0], snapped[i][1]
             A_rows.append([u, -v, 1.0, 0.0])
             A_rows.append([v,  u, 0.0, 1.0])
             b_rows.extend([sx, sy])
-        A_mat = np.array(A_rows)
-        b_vec = np.array(b_rows)
-        params, *_ = np.linalg.lstsq(A_mat, b_vec, rcond=None)
-        a, b, t = params[0], params[1], params[2:4]
-        X = _transform(P, a, b, t)
-        # Re-snap with refined grid
-        snapped.clear()
-        for i in range(len(labels)):
-            gx, gy = X[i]
-            ix, iy = int(round(gx)), int(round(gy))
-            if not (margin <= iy < h - margin and margin <= ix < w - margin):
+        params, *_ = np.linalg.lstsq(np.array(A_rows), np.array(b_rows),
+                                     rcond=None)
+        return params[0], params[1], params[2:4]
+
+    # ---- spacing check: template first ----
+    # Wells in a row are evenly spaced by the template pitch, so two
+    # detections of one row must sit a whole number of pitches apart.
+    # A pair that does not contains something that is not a well at
+    # that spot: a rounded tray corner or margin groove snapped near a
+    # lattice point.  The allowed deviation follows from the template's
+    # own lattice precision -- fit_rms, the RMS at which real wells sat
+    # on the lattice when the template was built -- scaled to this
+    # image and taken SPACING_SIGMAS gap deviations out; no tolerance
+    # is set by hand.  The check stays within a row because the pitch
+    # is what the template fixes most precisely; the row gap and
+    # stagger vary a little between trays.
+    tol_t = template.get("fit_rms")
+    if tol_t is not None:
+        tol_t = SPACING_SIGMAS * np.sqrt(2.0) * float(tol_t)
+    pitch_t = template.get("pitch")
+
+    def _row_members(idx, row):
+        return sorted((i for i in idx if row_col(labels[i])[0] == row),
+                      key=lambda i: row_col(labels[i])[1])
+
+    def _pitch_still_measured(idx):
+        return any(len(_row_members(idx, row)) >= 2 for row in (1, 2))
+
+    def _spacing_check(snapped):
+        """{i: deviation} of the fully visible detections dropped for
+        sitting off the row pitch.
+
+        Tested are the strongest few detections per row (the ones
+        that will anchor the refit) plus any detection in a C1 slot,
+        since that slot pins the column anchoring below and a tray
+        corner likes to land there.  Neighbouring detections of a row
+        are compared against a whole number of template pitches at
+        the scale of the lattice fit through the set under test.
+        Only neighbours: across a wide mosaic the small scale drift
+        of the registration grows with the column span, so a far pair
+        would fail on drift alone.  When pairs fail, the
+        detection consistent with the fewest neighbours goes first
+        (ties to the weaker evidence) -- an impostor agrees with
+        nobody, whereas a real well next to it still agrees with its
+        other neighbour -- and the fit and the test repeat.  A drop
+        is allowed only while some row keeps two detections, so the
+        pitch stays measured from the image."""
+        rejected = {}
+        if tol_t is None or pitch_t is None:
+            return rejected
+        full = _full(snapped)
+        idx = []
+        for row in (1, 2):
+            in_row = sorted((i for i in full if row_col(labels[i])[0] == row),
+                            key=lambda i: -snapped[i][2])
+            idx += in_row[:4]
+            idx += [i for i in in_row[4:] if row_col(labels[i])[1] == 1]
+        while len(idx) >= 2:
+            a_f, b_f, _ = _fit_lattice(snapped, idx)
+            s_f = float(np.hypot(a_f, b_f))
+            agree = {i: 0 for i in idx}
+            worst_dev = {i: 0.0 for i in idx}
+            for row in (1, 2):
+                members = _row_members(idx, row)
+                for i, j in zip(members, members[1:]):
+                    k = row_col(labels[j])[1] - row_col(labels[i])[1]
+                    gap = float(np.hypot(snapped[j][0] - snapped[i][0],
+                                         snapped[j][1] - snapped[i][1]))
+                    dev = abs(gap - k * pitch_t * s_f)
+                    if dev <= tol_t * s_f:
+                        agree[i] += 1
+                        agree[j] += 1
+                    else:
+                        worst_dev[i] = max(worst_dev[i], dev)
+                        worst_dev[j] = max(worst_dev[j], dev)
+            bad = [i for i in idx if worst_dev[i] > 0]
+            if not bad:
+                break
+            drop = min(bad, key=lambda i: (agree[i], snapped[i][2]))
+            if not _pitch_still_measured([m for m in idx if m != drop]):
+                break
+            rejected[drop] = worst_dev[drop]
+            idx.remove(drop)
+        return rejected
+
+    # ---- column anchoring ----
+    # The scan starts at the anchor well (C1 of the row on top), so no
+    # well of its row lies to the right of it.  When the anchor slot
+    # holds no verified detection but other wells of its row do, the
+    # layout slides left until the rightmost of them is C1.  The other
+    # row bounds the slide: a verified detection there cannot be
+    # pushed past its own C1 either.  Verified means fully visible and
+    # not spacing-rejected: a corner impostor in the anchor slot must
+    # not pin the columns, and a detection the mosaic edge cuts cannot
+    # be spacing-checked at all -- the tray's notched corner, clipped
+    # by the mosaic edge, scores like a weak well one pitch beyond the
+    # real end well and would pin the columns one pitch too far right.
+    # A real but cut-off C1 still keeps its columns through the fully
+    # visible C1 of the other row.
+    def _slide_needed(snapped, rejected):
+        cols = {}
+        for i in _full(snapped):
+            if i in rejected:
                 continue
-            y0, y1 = max(0, iy - snap_r), min(h, iy + snap_r + 1)
-            x0, x1 = max(0, ix - snap_r), min(w, ix + snap_r + 1)
-            window = z[y0:y1, x0:x1]
-            z_val = float(window.max())
-            if z_val >= observed_z:
-                pk = np.unravel_index(window.argmax(), window.shape)
-                snapped[i] = (float(x0 + pk[1]), float(y0 + pk[0]), z_val)
+            r, c = row_col(labels[i])
+            cols[r] = min(cols.get(r, c), c)
+        if row_col(anchor_label)[0] not in cols:
+            return 0
+        return min(cols.values()) - 1
+
+    X0 = _transform(P, a, b, t)
+    pitch_vec = X0[i_anchor] - X0[labels.index(anchor_row + "C2")]
+
+    def _settle(a, b, t):
+        """Snap, spacing-check, anchor and refit from (a, b, t) until
+        nothing changes.  A slide or a refit moves the lattice, which
+        can expose or lose detections, so the checks run again on the
+        new positions.  A rejection sticks to the image position it
+        was made at (a slide relabels the lattice point above it), so
+        rejections only accumulate and the loop settles.  Returns
+        (a, b, t, X, snapped, rejected)."""
+        X = _transform(P, a, b, t)
+        banned = {}
+        prev = None
+        for _ in range(12):
+            snapped = _snap_all(X)
+            rejected = {i: banned[det[:2]] for i, det in snapped.items()
+                        if det[:2] in banned}
+            fresh = _spacing_check({i: det for i, det in snapped.items()
+                                    if i not in rejected})
+            for i, d in fresh.items():
+                banned[snapped[i][:2]] = d
+            rejected.update(fresh)
+            state = (frozenset(snapped), frozenset(rejected))
+            if state == prev:
+                break
+            prev = state
+            k = _slide_needed(snapped, rejected)
+            if k >= 1:
+                t = t - k * pitch_vec
+                X = _transform(P, a, b, t)
+                prev = None
+                continue
+            # Refit from the strongest verified anchors per row: a
+            # handful of accurate anchors beats many noisy ones.
+            kept = [i for i in _full(snapped) if i not in rejected]
+            fit_idx = []
+            for row in (1, 2):
+                fit_idx += sorted((i for i in kept
+                                   if row_col(labels[i])[0] == row),
+                                  key=lambda i: -snapped[i][2])[:4]
+            if len(fit_idx) >= 3 or (rejected and len(fit_idx) >= 2):
+                a, b, t = _fit_lattice(snapped, fit_idx)
+                X = _transform(P, a, b, t)
+        return a, b, t, X, snapped, rejected
+
+    a, b, t, X, snapped, rejected = _settle(a, b, t)
+
+    # ---- flipped mount: guard against a one-pitch slide to the right ----
+    # The rules above bound the layout from the right through verified
+    # detections.  On the flipped mount the anchor (R1C1) is the inset
+    # row's end well: the tray's notched corner sits one pitch to its
+    # right, still inside the mosaic, and its rounded edge can score
+    # like a weak well *on* the pitch, where the spacing check cannot
+    # tell it apart.  Decide the alias the way match_layout() verifies
+    # a placement: snapped evidence saturated at the response's
+    # ceiling and counted above its snap noise floor, minus an
+    # empty-tray penalty for every in-view position (weighted by how
+    # much of its rim the mosaic shows).  Slide left for as long as
+    # that verified score improves.  Off-pitch detections keep their
+    # credit here: on a distorted mosaic they can be real wells, and
+    # a slide must not throw one off the lattice.  The default mount
+    # keeps the penalty-free behaviour it was validated with.
+    if r1_on_top:
+        cap = _evidence_cap(z_clean, valid)
+        penalty = EMPTY_TRAY_PENALTY * cap
+        floor = _snap_noise_floor(z, valid, 0.3 * r_px)
+
+        def _verified(Xc, snapped_c):
+            total = 0.0
+            for i, (gx, gy) in enumerate(Xc):
+                ix, iy = int(round(gx)), int(round(gy))
+                if not (0 <= iy < h and 0 <= ix < w and valid[iy, ix]):
+                    continue
+                if i in snapped_c:
+                    total += max(0.0, min(snapped_c[i][2], cap) - floor)
+                total -= penalty * _rim_visibility(valid, gx, gy, r_px)
+            return total
+
+        current = _verified(X, snapped)
+        for _ in range(3):
+            cand = _settle(a, b, t - pitch_vec)
+            score_left = _verified(cand[3], cand[4])
+            if score_left <= current:
+                break
+            a, b, t, X, snapped, rejected = cand
+            current = score_left
 
     # ---- classify wells: observed vs predicted ----
-    wells, predicted, lattice_placed = [], [], []
+    wells, predicted = [], []
+    for i in rejected:
+        snapped.pop(i, None)
 
     for i, label in enumerate(labels):
         if i in snapped:
-            sx, sy, z_val = snapped[i]
+            sx, sy, z_val, _ = snapped[i]
             contrast, completeness = rim_stats(smooth, sy, sx, r_px)
             wells.append(Well(label=label, cy=sy, cx=sx, r=r_px,
                               score=z_val, contrast=contrast,
                               completeness=completeness))
         else:
-            gx, gy = X[i]
-            ix, iy = int(round(gx)), int(round(gy))
-            in_bounds = (margin <= iy < h - margin and
-                         margin <= ix < w - margin)
-            if in_bounds:
-                lattice_placed.append(label)
-            predicted.append(PredictedWell(label=label, cy=float(gy),
-                                           cx=float(gx), r=r_px))
+            predicted.append(PredictedWell(label=label, cy=float(X[i, 1]),
+                                           cx=float(X[i, 0]), r=r_px))
 
     scale = float(np.hypot(a, b))
     info = dict(
@@ -1089,9 +1315,13 @@ def match_layout_prior(mosaic, count, template, expected_scale,
                                  - (180.0 if abs(base_theta) > 1 else 0.0)),
                            2),
         orientation="prior",
+        r1c1_corner=orientation,
+        anchor=anchor_label,
         feature_radius=round(r_px, 1),
         n_observed=len(wells),
-        lattice_placed=lattice_placed,
+        lattice_placed=[],
+        spacing_rejected=[(labels[i], round(d, 1))
+                          for i, d in rejected.items()],
     )
 
     if len(wells) < min_observed:

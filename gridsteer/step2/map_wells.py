@@ -11,6 +11,12 @@ ring detector followed by row extrapolation (predict_wells.py).
 
 Usage:
     python -m gridsteer.step2.map_wells data/mapper15 --out output_tracks
+    python -m gridsteer.step2.map_wells data/feb5.scan1 --out output_tracks \
+        --orientation upper-right
+
+--orientation names the image corner holding well R1C1 (bottom-right,
+the default, or upper-right -- the vertical flip) for the prior-anchored
+layout matcher; the orientation is not detected from the image.
 
 Outputs (in <out>/<dataset-name>/):
     mosaic_labeled.png   mosaic with detected (solid) and predicted
@@ -40,7 +46,8 @@ import numpy as np
 from .predict_wells import (predict_missing_wells, fit_motor_pixel_map,
                             motor_centering_positions, row_col,
                             stage_metadata_issue)
-from .well_template import (DEFAULT_TEMPLATE_PATH, load_template,
+from .well_template import (DEFAULT_TEMPLATE_PATH, ORIENTATIONS,
+                            ORIENTATION_DEFAULT, load_template,
                             match_layout)
 
 
@@ -637,6 +644,14 @@ def main():
     ap.add_argument("--no-template", action="store_true",
                     help="use the legacy per-well ring detector instead of "
                          "whole-layout template matching")
+    ap.add_argument("--orientation", choices=ORIENTATIONS,
+                    default=ORIENTATION_DEFAULT,
+                    help="image corner holding well R1C1 (C1 is always "
+                         "rightmost): 'bottom-right' puts the 10-well row "
+                         "R2 on top, 'upper-right' is its vertical flip "
+                         "with the 9-well row R1 on top. Used by the "
+                         "prior-anchored layout matcher; not detected "
+                         f"from the image (default: {ORIENTATION_DEFAULT})")
     args = ap.parse_args()
 
     if args.outdir is not None:
@@ -656,6 +671,14 @@ def main():
         for w in ws:
             print(f"    {w.label}: Tray ({w.cy:7.1f},{w.cx:7.1f})"
                   f"  r={w.r:5.1f}px  (Predicted)")
+
+    def orientation_note():
+        # Only the prior-anchored matcher takes the orientation from
+        # the flag; the other detectors infer it from the image.
+        if args.orientation != ORIENTATION_DEFAULT:
+            print(f"  Note: --orientation {args.orientation} Applies to the "
+                  f"Prior-Anchored Matcher Only; This Detector Infers the "
+                  f"Orientation from the Image")
 
     print(f"Loading Frames from {args.data_dir} ...")
     frames, meta, names = load_frames(args.data_dir, args.key)
@@ -703,11 +726,16 @@ def main():
             print("Detecting Wells (Prior-Anchored Layout Matching) ...")
             print(f"  Scale Prior from Stage Calibration: "
                   f"Expected Scale {expected:.3f}")
+            print(f"  Tray Orientation: R1C1 in the "
+                  f"{args.orientation.replace('-', ' ').title()} Corner"
+                  f"{' (Default)' if args.orientation == ORIENTATION_DEFAULT else ''}")
             from .well_template import match_layout_prior
             wells, predicted, tinfo = match_layout_prior(
-                mosaic, count, template, expected)
+                mosaic, count, template, expected,
+                orientation=args.orientation)
         else:
             print("Detecting Wells (Whole-Layout Template Matching) ...")
+            orientation_note()
             wells, predicted, tinfo = match_layout(mosaic, count, template,
                                                    expected_scale=expected)
         if not wells:
@@ -717,6 +745,11 @@ def main():
               f"Rotation={tinfo['rotation_deg']:+.1f} deg, "
               f"Orientation={tinfo['orientation'].title()}, "
               f"Well Radius ~{well_radius:.0f}px")
+        if tinfo.get("spacing_rejected"):
+            print("  Detections Off the Template Pitch, Placed on the "
+                  "Fitted Lattice Instead (Spacing Check): "
+                  + ", ".join(f"{lab} ({dev:.0f}px off the row pitch)"
+                              for lab, dev in tinfo["spacing_rejected"]))
         if tinfo.get("lattice_placed"):
             print(f"  Wells Cut Off by the Mosaic Edge, Placed on the "
                   f"Fitted Lattice: {', '.join(tinfo['lattice_placed'])}")
@@ -728,6 +761,7 @@ def main():
             print_predicted(predicted)
     else:
         print("Detecting Wells (Ring Matched Filter) ...")
+        orientation_note()
         raw_wells, r_star, rim_w = detect_wells(mosaic, count)
         if not raw_wells:
             no_wells_exit()
