@@ -862,6 +862,8 @@ def match_layout(mosaic, count, template, observed_z=3.0, anchor_z=2.5,
                 feature_radius=round(r_out, 1),
                 n_observed=len(wells), n_in_view=int(sum(in_view)),
                 lattice_placed=lattice_placed,
+                lattice={l: (float(X[i, 0]), float(X[i, 1]))
+                         for i, l in enumerate(labels)},
                 observed_z=[round(float(v), 1)
                             for v, ok in zip(snap_vals, verified)
                             if v >= observed_z and ok])
@@ -1092,6 +1094,8 @@ def match_layout_prior(mosaic, count, template, expected_scale,
         feature_radius=round(r_px, 1),
         n_observed=len(wells),
         lattice_placed=lattice_placed,
+        lattice={l: (float(X[i][0]), float(X[i][1]))
+                 for i, l in enumerate(labels)},
     )
 
     if len(wells) < min_observed:

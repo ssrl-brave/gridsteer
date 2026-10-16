@@ -540,7 +540,9 @@ def planar_pose(Gs):
 # Visualization
 # --------------------------------------------------------------------------
 
-def save_mosaic_figure(mosaic, wells, path, predicted=()):
+def save_mosaic_figure(mosaic, wells, path, predicted=(), lattice=None):
+    """lattice: optional {label: (cx, cy)} fitted-layout positions, drawn
+    for the detected wells so snap scatter off the lattice is visible."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -562,6 +564,13 @@ def save_mosaic_figure(mosaic, wells, path, predicted=()):
         ax.add_patch(Circle((w.cx, w.cy), w.r, fill=False, color="lime", lw=2))
         ax.text(w.cx, w.cy, w.label, color="red", fontsize=14,
                 ha="center", va="center", weight="bold")
+    if lattice:
+        for w in wells:
+            if w.label in lattice:
+                lx, ly = lattice[w.label]
+                ax.add_patch(Circle((lx, ly), w.r, fill=False,
+                                    color="magenta", lw=1.5))
+                ax.plot([lx], [ly], "+", color="magenta", ms=10, mew=1.5)
     for w in predicted:
         ax.add_patch(Circle((w.cx, w.cy), w.r, fill=False, color="cyan",
                             lw=2, linestyle="--"))
@@ -569,9 +578,13 @@ def save_mosaic_figure(mosaic, wells, path, predicted=()):
                 ha="center", va="center", weight="bold")
     ax.set_xlim(x0, x1)
     ax.set_ylim(y1, y0)
-    if predicted:
+    if predicted or lattice:
         ax.plot([], [], color="lime", lw=2, label="Detected")
-        ax.plot([], [], color="cyan", lw=2, linestyle="--", label="Predicted")
+        if lattice:
+            ax.plot([], [], color="magenta", lw=1.5, label="Fitted Lattice")
+        if predicted:
+            ax.plot([], [], color="cyan", lw=2, linestyle="--",
+                    label="Predicted")
         ax.legend(loc="upper right", fontsize=12)
     if not wells and not predicted:
         ax.set_title("Fused Tray Mosaic (No Wells Detected)")
@@ -703,6 +716,7 @@ def main():
                   f"Falling Back to the Legacy Per-Well Detector")
 
     well_radius = None
+    lattice = None
     if template is not None:
         expected = None
         if reg.get("stage_gain") and template.get("stage_gain"):
@@ -722,6 +736,7 @@ def main():
         if not wells:
             no_wells_exit()
         well_radius = tinfo['feature_radius']
+        lattice = tinfo.get("lattice")
         print(f"  Matched Layout: Scale={tinfo['scale']:.3f}, "
               f"Rotation={tinfo['rotation_deg']:+.1f} deg, "
               f"Orientation={tinfo['orientation'].title()}, "
@@ -731,6 +746,14 @@ def main():
                   f"Fitted Lattice: {', '.join(tinfo['lattice_placed'])}")
         print(f"  {len(wells)} Observed Wells:")
         print_observed(wells)
+        if lattice:
+            dev = [np.hypot(w.cx - lattice[w.label][0],
+                            w.cy - lattice[w.label][1])
+                   for w in wells if w.label in lattice]
+            if dev:
+                print(f"  Detected vs Fitted Lattice: RMS "
+                      f"{np.sqrt(np.mean(np.square(dev))):.1f}px, "
+                      f"Max {max(dev):.1f}px")
         if predicted:
             print(f"  {len(predicted)} Wells Placed by the Fitted Layout"
                   f" (Not Observed):")
@@ -797,7 +820,7 @@ def main():
         wr.writerows(pose)
 
     save_mosaic_figure(mosaic, wells, out / "mosaic_labeled.png",
-                       predicted=predicted)
+                       predicted=predicted, lattice=lattice)
     save_overlay_montage(frames, records, out / "frames_overlay.png")
 
     n_vis = sum(r["visibility"] != "out" for r in records)
