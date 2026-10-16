@@ -24,7 +24,6 @@ proc fourCorners_sampleFocus { focus_range focus_iters } {
     # For beamlines without an inline camera: zoom the sample (off-axis)
     # camera to MedL, autofocus on it, then restore the original zoom so
     # refine_center sees the same pixel scale as the optCirc scan.
-    global offaxis_url
     set zoomDev [::config getStr sampleDigitalZoom]
     if { $zoomDev eq "" } {
         set zoomDev camera_zoom
@@ -42,7 +41,10 @@ proc fourCorners_sampleFocus { focus_range focus_iters } {
     # Let the camera stream catch up with the new zoom
     after 2000
 
-    goCirc_autofocus $focus_range $focus_iters "http://pxgpu03:8003" sample $offaxis_url
+    # Same path as running "autoFocus sample": BO on the off-axis camera,
+    # moving the sample depth-wise along that camera's view axis
+    set afOp [start_waitable_operation autoFocus sample $focus_range $focus_iters]
+    wait_for_operation_to_finish $afOp
 
     move $zoomDev to $zStart
     wait_for_devices $zoomDev
@@ -51,10 +53,27 @@ proc fourCorners_sampleFocus { focus_range focus_iters } {
 }
 
 
+proc fourCorners_register { results } {
+    # Register the refined 4-point grid in DCSS via gridGroupConfig
+    # Each result is {name wa wb x y z phi} — extract {x y z phi} for each corner
+    set p0 [list [lindex [lindex $results 0] 3] [lindex [lindex $results 0] 4] [lindex [lindex $results 0] 5] [lindex [lindex $results 0] 6]]
+    set p1 [list [lindex [lindex $results 1] 3] [lindex [lindex $results 1] 4] [lindex [lindex $results 1] 5] [lindex [lindex $results 1] 6]]
+    set p2 [list [lindex [lindex $results 2] 3] [lindex [lindex $results 2] 4] [lindex [lindex $results 2] 5] [lindex [lindex $results 2] 6]]
+    set p3 [list [lindex [lindex $results 3] 3] [lindex [lindex $results 3] 4] [lindex [lindex $results 3] 5] [lindex [lindex $results 3] 6]]
+
+    send_operation_update "Registering 4-point grid: $p0 $p1 $p2 $p3"
+    set ggcOp [start_waitable_operation gridGroupConfig add_4PointGrid $p0 $p1 $p2 $p3 sample]
+    wait_for_operation_to_finish $ggcOp
+
+    send_operation_update "4-point grid registered in DCSS"
+    return OK
+}
+
+
 proc fourCorners_start { args } {
     # --- Help ---
     if { [llength $args] > 0 && ([lindex $args 0] eq "-h" || [lindex $args 0] eq "--help") } {
-        send_operation_update "Usage: fourCorners <dirname> ?--re-detect-radius? ?--dry-run? ?--focus-range N? ?--focus-iters N? ?--inline-focus?"
+        send_operation_update "Usage: fourCorners <dirname> ?--re-detect-radius? ?--dry-run? ?--focus-range N? ?--focus-iters N? ?--inline-focus? ?--from-json?"
         send_operation_update "  dirname              — scan directory (must contain output_json_2/)"
         send_operation_update "  --re-detect-radius   — auto-detect radius from live camera instead"
         send_operation_update "                         of using the value in wells.json (optional)"
@@ -65,6 +84,8 @@ proc fourCorners_start { args } {
         send_operation_update "  --inline-focus       — autofocus on the inline camera at phi+90"
         send_operation_update "                         (default: sample camera at MedL zoom, face-on,"
         send_operation_update "                         then restore the previous zoom)"
+        send_operation_update "  --from-json          — skip the corner visits; register the 4-point grid"
+        send_operation_update "                         from an existing output_json_2/four_corners.json"
         send_operation_update ""
         send_operation_update "Moves to four corner wells — (2,1), (1,1), (1,9), (2,10) — and"
         send_operation_update "refines each position using ring correlation on the off-axis camera."
@@ -80,6 +101,7 @@ proc fourCorners_start { args } {
     set focus_range 500
     set focus_iters 12
     set sample_focus 1
+    set from_json 0
     set i 0
     while {$i < [llength $args]} {
         set a [lindex $args $i]
@@ -95,6 +117,8 @@ proc fourCorners_start { args } {
             set focus_iters [lindex $args $i]
         } elseif { $a eq "--inline-focus" } {
             set sample_focus 0
+        } elseif { $a eq "--from-json" } {
+            set from_json 1
         } elseif { $dirname eq "" } {
             set dirname $a
         }
@@ -111,6 +135,23 @@ proc fourCorners_start { args } {
     variable gonio_phi
     global pyExe
     global offaxis_url
+
+    set outfile "$dirname/output_json_2/four_corners.json"
+
+    if { $from_json } {
+        if {![file exists $outfile]} {
+            send_operation_update "ERROR: $outfile not found. Run fourCorners without --from-json first."
+            return FAIL
+        }
+        send_operation_update "Loading corners from $outfile (skipping corner visits)"
+        set results {}
+        foreach line [split [exec $pyExe -m gridsteer.step2.read_four_corners $outfile] "\n"] {
+            if { [string trim $line] eq "" } continue
+            lappend results $line
+            send_operation_update "Corner [lindex $line 0] ([lindex $line 1],[lindex $line 2]): x=[lindex $line 3] y=[lindex $line 4] z=[lindex $line 5] phi=[lindex $line 6]"
+        }
+        return [fourCorners_register $results]
+    }
 
     # The four corner wells: A=(2,1) B=(1,1) C=(1,9) D=(2,10)
     set corners { {2 1} {1 1} {1 9} {2 10} }
@@ -165,7 +206,8 @@ proc fourCorners_start { args } {
             move gonio_phi to $phi_plus_90
             wait_for_devices gonio_phi
             send_operation_update "Corner $name: autofocusing on inline camera ..."
-            goCirc_autofocus $focus_range $focus_iters
+            set afOp [start_waitable_operation autoFocus inline $focus_range $focus_iters]
+            wait_for_operation_to_finish $afOp
             after 1000
             move gonio_phi to $well_phi
             wait_for_devices gonio_phi
@@ -204,7 +246,6 @@ proc fourCorners_start { args } {
     }
 
     # Write four_corners.json via Python to avoid Tcl quoting pain
-    set outfile "$dirname/output_json_2/four_corners.json"
     set json_arg {}
     foreach r $results {
         lappend json_arg "[lindex $r 0] [lindex $r 1] [lindex $r 2] [lindex $r 3] [lindex $r 4] [lindex $r 5] [lindex $r 6]"
@@ -214,17 +255,5 @@ proc fourCorners_start { args } {
 
     send_operation_update "four_corners.json ready at $outfile"
 
-    # Register the refined 4-point grid in DCSS via gridGroupConfig
-    # Each result is {name wa wb x y z phi} — extract {x y z phi} for each corner
-    set p0 [list [lindex [lindex $results 0] 3] [lindex [lindex $results 0] 4] [lindex [lindex $results 0] 5] [lindex [lindex $results 0] 6]]
-    set p1 [list [lindex [lindex $results 1] 3] [lindex [lindex $results 1] 4] [lindex [lindex $results 1] 5] [lindex [lindex $results 1] 6]]
-    set p2 [list [lindex [lindex $results 2] 3] [lindex [lindex $results 2] 4] [lindex [lindex $results 2] 5] [lindex [lindex $results 2] 6]]
-    set p3 [list [lindex [lindex $results 3] 3] [lindex [lindex $results 3] 4] [lindex [lindex $results 3] 5] [lindex [lindex $results 3] 6]]
-
-    send_operation_update "Registering 4-point grid: $p0 $p1 $p2 $p3"
-    set ggcOp [start_waitable_operation gridGroupConfig add_4PointGrid $p0 $p1 $p2 $p3 sample]
-    wait_for_operation_to_finish $ggcOp
-
-    send_operation_update "4-point grid registered in DCSS"
-    return OK
+    return [fourCorners_register $results]
 }
