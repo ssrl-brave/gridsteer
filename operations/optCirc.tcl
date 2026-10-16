@@ -139,12 +139,26 @@ proc optCirc_start { args } {
     move gonio_phi to $start_G
     wait_for_devices sample_x sample_y sample_z gonio_phi
 
-	# Step 2: Map circular wells via whole-layout template matching
+	# Step 2: Map circular wells via whole-layout template matching.
+	# Runs on the pxgpu03 align server (the beamline host lacks the memory
+	# for the mosaic); the scan dir is on /data, shared by both machines.
 	set outdir "$dirname/output_json_2"
-	send_operation_update "Running the optimizer to map out circular wells in the grid ... "
-    set pyCmd "$pyExe -m gridsteer.step2.map_wells $dirname --outdir $outdir"
-	send_operation_update "pyCmd: $pyCmd"
-    set pyOut [eval exec $pyCmd]
+	set serverUrl "http://pxgpu03:8003"
+	send_operation_update "Running the optimizer to map out circular wells in the grid on $serverUrl ... "
+	set mapPayload "{\"data_dir\": \"$dirname\", \"outdir\": \"$outdir\"}"
+	set mapCmd [list curl -s --max-time 1000 -X POST "$serverUrl/optcirc/map_wells" \
+	         -H "Content-Type: application/json" -d $mapPayload]
+	if {[catch {exec {*}$mapCmd} mapRes]} {
+		send_operation_update "ERROR: could not reach $serverUrl/optcirc/map_wells: $mapRes"
+		return FAIL
+	}
+	if {[regexp {"message":\s*"([^"]*)"} $mapRes match mapMsg]} {
+		send_operation_update "map_wells: $mapMsg"
+	}
+	if {![regexp {"status":\s*"ok"} $mapRes]} {
+		send_operation_update "ERROR: map_wells failed on server: $mapRes"
+		return FAIL
+	}
 
 	# Verify mapping.json was produced (required by goCirc)
 	set mapping_file "$outdir/mapping.json"
