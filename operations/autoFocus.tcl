@@ -21,7 +21,22 @@ proc autoFocus_initialize { } {
 proc autoFocus_start { {move_type "inline" } {range 250} {iters 12} {server_url "http://pxgpu03:8003"} } {
     global af_offaxis_url
     global af_inline_url
-    
+
+    # --- Help ---
+    if { $move_type eq "-h" || $move_type eq "--help" } {
+        send_operation_update "Usage: autoFocus ?camera? ?range? ?iters? ?server_url?"
+        send_operation_update "  camera      — inline or sample (default: inline)"
+        send_operation_update "  range       — focus search range in um, +/- about the start (default: 250)"
+        send_operation_update "  iters       — max Bayesian optimization iterations (default: 12)"
+        send_operation_update "  server_url  — alignment server (default: http://pxgpu03:8003)"
+        send_operation_update ""
+        send_operation_update "Bayesian-optimization autofocus. Scores the chosen camera's image"
+        send_operation_update "sharpness on the alignment server and moves the sample along that"
+        send_operation_update "camera's view axis (moveSampleOutVideo), then returns to the best"
+        send_operation_update "position found. Uses the camera's current zoom."
+        return OK
+    }
+
     if { $move_type eq "inline" } {
         if {![info exists af_inline_url] || $af_inline_url eq "unknown"} {
             send_operation_update "Error: Inline camera not initialized."
