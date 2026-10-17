@@ -85,8 +85,9 @@ proc fourCorners_register { results } {
 proc fourCorners_start { args } {
     # --- Help ---
     if { [llength $args] > 0 && ([lindex $args 0] eq "-h" || [lindex $args 0] eq "--help") } {
-        send_operation_update "Usage: fourCorners <dirname> ?--re-detect-radius? ?--dry-run? ?--focus-range N? ?--focus-iters N? ?--focus-server URL? ?--sample-focus? ?--inline-phi-offset DEG? ?--from-json? ?--from-optCirc? ?--from-optCirc-lattice?"
-        send_operation_update "  dirname              — scan directory (must contain output_json_2/)"
+        send_operation_update "Usage: fourCorners ?dirname? ?--re-detect-radius? ?--dry-run? ?--focus-range N? ?--focus-iters N? ?--focus-server URL? ?--sample-focus? ?--inline-phi-offset DEG? ?--from-json? ?--from-optCirc? ?--from-optCirc-lattice?"
+        send_operation_update "  dirname              — scan directory (must contain output_json_2/);"
+        send_operation_update "                         default: this beamline's latest optCirc run"
         send_operation_update "  --re-detect-radius   — auto-detect radius from live camera instead"
         send_operation_update "                         of using the value in wells.json (optional)"
         send_operation_update "  --dry-run            — move to each well but skip the nudge;"
@@ -160,9 +161,15 @@ proc fourCorners_start { args } {
         }
         incr i
     }
-    if { $dirname eq "" } {
-        send_operation_update "ERROR: dirname is required. Run fourCorners --help for usage."
-        return FAIL
+    # No dirname (or "latest"): this beamline's latest optCirc run
+    variable beamlineID
+    if { $dirname eq "" || $dirname eq "latest" } {
+        set dirname "/data/blctl/gridsteer_operation_data/optCirc.$beamlineID.latest"
+        if {[catch {file readlink $dirname} target]} {
+            send_operation_update "ERROR: no latest optCirc run ($dirname). Run optCirc first or pass a dirname."
+            return FAIL
+        }
+        send_operation_update "Using latest optCirc run: $dirname -> $target"
     }
 
     variable sample_x

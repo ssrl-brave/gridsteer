@@ -24,8 +24,10 @@ proc goCirc_initialize { } {
 proc goCirc_start { args } {
     # --- Help ---
     if { [llength $args] > 0 && ([lindex $args 0] eq "-h" || [lindex $args 0] eq "--help") } {
-        send_operation_update "Usage: goCirc <dirname> <well_a> <well_b>"
-        send_operation_update "  dirname      — scan directory (must contain output_json_2/mapping.json)"
+        send_operation_update "Usage: goCirc ?dirname? <well_a> <well_b>"
+        send_operation_update "  dirname      — scan directory (must contain output_json_2/mapping.json);"
+        send_operation_update "                 default: this beamline's latest optCirc run"
+        send_operation_update "                 (/data/blctl/gridsteer_operation_data/optCirc.<beamline>.latest)"
         send_operation_update "  well_a       — well row index (integer)"
         send_operation_update "  well_b       — well column index (integer)"
         send_operation_update ""
@@ -35,13 +37,25 @@ proc goCirc_start { args } {
     }
 
     # --- Parse positional args with defaults ---
+    # Two args (well_a well_b) or dirname "latest": use the latest optCirc run
+    variable beamlineID
+    if { [llength $args] == 2 } {
+        set args [linsert $args 0 latest]
+    }
+    if { [llength $args] < 3 } {
+        send_operation_update "ERROR: well_a and well_b are required. Run goCirc --help for usage."
+        return FAIL
+    }
     set dirname     [lindex $args 0]
     set well_a      [lindex $args 1]
     set well_b      [lindex $args 2]
-
-    if { [llength $args] < 3 } {
-        send_operation_update "ERROR: dirname, well_a, and well_b are required. Run goCirc --help for usage."
-        return FAIL
+    if { $dirname eq "latest" } {
+        set dirname "/data/blctl/gridsteer_operation_data/optCirc.$beamlineID.latest"
+        if {[catch {file readlink $dirname} target]} {
+            send_operation_update "ERROR: no latest optCirc run ($dirname). Run optCirc first."
+            return FAIL
+        }
+        send_operation_update "Using latest optCirc run: $dirname -> $target"
     }
 
     # access the current motor positions

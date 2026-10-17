@@ -86,8 +86,10 @@ proc zigZagScan { dirname {n_passes 3}  {horiz_step 0.05} {vert_step 0.2} {scan_
 proc optCirc_start { args } {
     # --- Help ---
     if { [llength $args] > 0 && ([lindex $args 0] eq "-h" || [lindex $args 0] eq "--help") } {
-        send_operation_update "Usage: optCirc <dirname> ?n_passes? ?horiz_step? ?vert_step? ?scan_height?"
-        send_operation_update "  dirname      — output directory for scan data and results"
+        send_operation_update "Usage: optCirc ?dirname? ?n_passes? ?horiz_step? ?vert_step? ?scan_height?"
+        send_operation_update "  dirname      — output directory for scan data and results (optional;"
+        send_operation_update "                 omit or 'auto' for a new run folder under"
+        send_operation_update "                 /data/blctl/gridsteer_operation_data)"
         send_operation_update "  n_passes     — number of zigzag passes (default: 3)"
         send_operation_update "  horiz_step   — horizontal step size in mm (default: 0.05)"
         send_operation_update "  vert_step    — vertical step size in mm (default: 0.2)"
@@ -97,21 +99,33 @@ proc optCirc_start { args } {
         send_operation_update "camera frames, then runs whole-layout template matching (step2) to"
         send_operation_update "detect circular wells and compute motor centering positions."
         send_operation_update "Results are written to <dirname>/output_json_2/mapping.json."
+        send_operation_update "On success, /data/blctl/gridsteer_operation_data/optCirc.<beamline>.latest"
+        send_operation_update "is pointed at this run; goCirc and fourCorners use it by default."
         send_operation_update "Use goCirc to move to a specific well afterwards."
         return OK
     }
 
     # --- Parse positional args with defaults ---
+    # No dirname (or "auto", or a leading number = n_passes): new run folder
+    variable beamlineID
+    set dataRoot /data/blctl/gridsteer_operation_data
+    set first [lindex $args 0]
+    if { $first eq "" || $first eq "auto" || [string is double -strict $first] } {
+        if { $first eq "auto" } {
+            set args [lrange $args 1 end]
+        }
+        if {![file isdirectory $dataRoot]} {
+            send_operation_update "ERROR: $dataRoot does not exist"
+            return FAIL
+        }
+        set dirname "$dataRoot/optCirc.$beamlineID.[clock format [clock seconds] -format %Y%m%d_%H%M%S]"
+        set args [linsert $args 0 $dirname]
+    }
     set dirname    [lindex $args 0]
     set n_passes   [expr {[llength $args] > 1 ? [lindex $args 1] : 3}]
     set horiz_step [expr {[llength $args] > 2 ? [lindex $args 2] : 0.05}]
     set vert_step  [expr {[llength $args] > 3 ? [lindex $args 3] : 0.2}]
     set scan_height [expr {[llength $args] > 4 ? [lindex $args 4] : 2.5}]
-
-    if { $dirname eq "" } {
-        send_operation_update "ERROR: dirname is required. Run optCirc --help for usage."
-        return FAIL
-    }
 
     # access the current motor positions
     variable sample_x
@@ -172,6 +186,22 @@ proc optCirc_start { args } {
 		return FAIL
 	}
 	send_operation_update "mapping.json ready at $mapping_file"
+
+	# Point this beamline's "latest" link at the run (relative link, so it
+	# resolves the same on the beamline host and pxgpu03)
+	set dataRoot /data/blctl/gridsteer_operation_data
+	set latest "$dataRoot/optCirc.$beamlineID.latest"
+	set runDir [file normalize $dirname]
+	if { [file dirname $runDir] eq $dataRoot } {
+		set target [file tail $runDir]
+	} else {
+		set target $runDir
+	}
+	if {[catch {exec ln -sfn $target $latest} err]} {
+		send_operation_update "WARNING: could not update $latest: $err"
+	} else {
+		send_operation_update "$latest -> $target"
+	}
 
     return OK
 }
