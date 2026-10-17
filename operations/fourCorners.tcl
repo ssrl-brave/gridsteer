@@ -85,13 +85,15 @@ proc fourCorners_register { results } {
 proc fourCorners_start { args } {
     # --- Help ---
     if { [llength $args] > 0 && ([lindex $args 0] eq "-h" || [lindex $args 0] eq "--help") } {
-        send_operation_update "Usage: fourCorners ?dirname? ?--re-detect-radius? ?--no-snap? ?--snapped? ?--focus-range N? ?--focus-iters N? ?--focus-server URL? ?--sample-focus? ?--inline-phi-offset DEG? ?--from-json? ?--from-optCirc?"
+        send_operation_update "Usage: fourCorners ?dirname? ?--re-detect-radius? ?--snap? ?--snapped? ?--focus-range N? ?--focus-iters N? ?--focus-server URL? ?--sample-focus? ?--inline-phi-offset DEG? ?--from-json? ?--from-optCirc?"
         send_operation_update "  dirname              — scan directory (must contain output_json_2/);"
         send_operation_update "                         default: this beamline's latest optCirc run"
         send_operation_update "  --re-detect-radius   — auto-detect radius from live camera instead"
         send_operation_update "                         of using the value in wells.json (optional)"
-        send_operation_update "  --no-snap            — visit and autofocus each corner, run the center"
-        send_operation_update "                         refinement for diagnostics only (no nudge)"
+        send_operation_update "  --snap               — nudge each corner by the ring-correlation center"
+        send_operation_update "                         refinement. Default is no nudge: the refinement"
+        send_operation_update "                         still runs and saves refine_*.png for diagnostics"
+        send_operation_update "                         (snapping proved unreliable on domed/haloed wells)"
         send_operation_update "  --snapped            — start from mapping.json (detected corners at their"
         send_operation_update "                         snapped positions) instead of the default"
         send_operation_update "                         mappings_on_lattice.json (all corners on the fitted lattice)"
@@ -108,9 +110,10 @@ proc fourCorners_start { args } {
         send_operation_update "  --from-optCirc       — skip the corner visits; register the 4-point grid"
         send_operation_update "                         straight from the optCirc mapping (lattice unless --snapped)"
         send_operation_update ""
-        send_operation_update "Moves to four corner wells — (2,1), (1,1), (1,9), (2,10) — and"
-        send_operation_update "refines each position using ring correlation on the off-axis camera."
-        send_operation_update "Writes refined motor positions to <dirname>/output_json_2/four_corners.json."
+        send_operation_update "Moves to four corner wells — (2,1), (1,1), (1,9), (2,10) — autofocuses"
+        send_operation_update "each, optionally (--snap) refines the center by ring correlation on the"
+        send_operation_update "off-axis camera, writes the positions to"
+        send_operation_update "<dirname>/output_json_2/four_corners.json and registers the 4-point grid."
         send_operation_update "Requires optCirc to have been run first."
         return OK
     }
@@ -118,7 +121,7 @@ proc fourCorners_start { args } {
     # --- Parse args ---
     set dirname ""
     set redetect 0
-    set nosnap 0
+    set nosnap 1
     set focus_range 500
     set focus_iters 20
     set focus_server "http://pxgpu03:8003"
@@ -132,7 +135,10 @@ proc fourCorners_start { args } {
         set a [lindex $args $i]
         if { $a eq "--re-detect-radius" } {
             set redetect 1
+        } elseif { $a eq "--snap" } {
+            set nosnap 0
         } elseif { $a eq "--no-snap" } {
+            # the default now; kept so old commands still work
             set nosnap 1
         } elseif { $a eq "--snapped" } {
             set use_lattice 0
@@ -310,10 +316,10 @@ proc fourCorners_start { args } {
             wait_for_operation_to_finish $moveOp
             after 300
         } else {
-            send_operation_update "Corner $name: --no-snap, skipping nudge"
+            send_operation_update "Corner $name: no nudge (pass --snap to apply it)"
         }
 
-        # Record the motor position (current if --no-snap, post-nudge otherwise)
+        # Record the motor position (current unless --snap nudged it)
         send_operation_update "Corner $name ($wa,$wb): x=$sample_x y=$sample_y z=$sample_z phi=$gonio_phi"
 
         lappend results [list $name $wa $wb $sample_x $sample_y $sample_z $gonio_phi]
