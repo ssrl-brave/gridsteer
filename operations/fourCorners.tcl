@@ -85,13 +85,16 @@ proc fourCorners_register { results } {
 proc fourCorners_start { args } {
     # --- Help ---
     if { [llength $args] > 0 && ([lindex $args 0] eq "-h" || [lindex $args 0] eq "--help") } {
-        send_operation_update "Usage: fourCorners ?dirname? ?--re-detect-radius? ?--dry-run? ?--focus-range N? ?--focus-iters N? ?--focus-server URL? ?--sample-focus? ?--inline-phi-offset DEG? ?--from-json? ?--from-optCirc? ?--from-optCirc-lattice?"
+        send_operation_update "Usage: fourCorners ?dirname? ?--re-detect-radius? ?--no-snap? ?--snapped? ?--focus-range N? ?--focus-iters N? ?--focus-server URL? ?--sample-focus? ?--inline-phi-offset DEG? ?--from-json? ?--from-optCirc?"
         send_operation_update "  dirname              — scan directory (must contain output_json_2/);"
         send_operation_update "                         default: this beamline's latest optCirc run"
         send_operation_update "  --re-detect-radius   — auto-detect radius from live camera instead"
         send_operation_update "                         of using the value in wells.json (optional)"
-        send_operation_update "  --dry-run            — move to each well but skip the nudge;"
-        send_operation_update "                         only record positions and write diagnostics"
+        send_operation_update "  --no-snap            — visit and autofocus each corner, run the center"
+        send_operation_update "                         refinement for diagnostics only (no nudge)"
+        send_operation_update "  --snapped            — start from mapping.json (detected corners at their"
+        send_operation_update "                         snapped positions) instead of the default"
+        send_operation_update "                         mappings_on_lattice.json (all corners on the fitted lattice)"
         send_operation_update "  --focus-range <um>   — autofocus Z search range in um (default: 500)"
         send_operation_update "  --focus-iters <n>    — max autofocus iterations (default: 20)"
         send_operation_update "  --focus-server <url> — alignment server for autofocus (default: http://pxgpu03:8003)"
@@ -103,9 +106,7 @@ proc fourCorners_start { args } {
         send_operation_update "  --from-json          — skip the corner visits; register the 4-point grid"
         send_operation_update "                         from an existing output_json_2/four_corners.json"
         send_operation_update "  --from-optCirc       — skip the corner visits; register the 4-point grid"
-        send_operation_update "                         from the optCirc mapping (no focus or snap)"
-        send_operation_update "  --from-optCirc-lattice — as --from-optCirc, but all four corners on the"
-        send_operation_update "                         fitted lattice (output_json_2/mappings_on_lattice.json)"
+        send_operation_update "                         straight from the optCirc mapping (lattice unless --snapped)"
         send_operation_update ""
         send_operation_update "Moves to four corner wells — (2,1), (1,1), (1,9), (2,10) — and"
         send_operation_update "refines each position using ring correlation on the off-axis camera."
@@ -117,7 +118,7 @@ proc fourCorners_start { args } {
     # --- Parse args ---
     set dirname ""
     set redetect 0
-    set dryrun 0
+    set nosnap 0
     set focus_range 500
     set focus_iters 20
     set focus_server "http://pxgpu03:8003"
@@ -125,14 +126,16 @@ proc fourCorners_start { args } {
     set sample_focus 0
     set from_json 0
     set from_optcirc 0
-    set optcirc_lattice 0
+    set use_lattice 1
     set i 0
     while {$i < [llength $args]} {
         set a [lindex $args $i]
         if { $a eq "--re-detect-radius" } {
             set redetect 1
-        } elseif { $a eq "--dry-run" } {
-            set dryrun 1
+        } elseif { $a eq "--no-snap" } {
+            set nosnap 1
+        } elseif { $a eq "--snapped" } {
+            set use_lattice 0
         } elseif { $a eq "--focus-range" } {
             incr i
             set focus_range [lindex $args $i]
@@ -154,8 +157,11 @@ proc fourCorners_start { args } {
         } elseif { $a eq "--from-optCirc" } {
             set from_optcirc 1
         } elseif { $a eq "--from-optCirc-lattice" } {
+            # lattice is the default now; kept so old commands still work
             set from_optcirc 1
-            set optcirc_lattice 1
+        } elseif { [string match -* $a] } {
+            send_operation_update "ERROR: unknown option $a. Run fourCorners --help for usage."
+            return FAIL
         } elseif { $dirname eq "" } {
             set dirname $a
         }
@@ -200,27 +206,25 @@ proc fourCorners_start { args } {
     set corners { {2 1} {1 1} {1 9} {2 10} }
     set corner_names {A B C D}
 
-    # Verify mapping.json exists
-    set mapping_file "$dirname/output_json_2/mapping.json"
+    # Corner start positions: fitted lattice by default (all four corners
+    # from one fit), or --snapped for mapping.json (detected corners at
+    # their snapped positions)
+    if { $use_lattice } {
+        set mapping_file "$dirname/output_json_2/mappings_on_lattice.json"
+        set readFlag "--lattice"
+    } else {
+        set mapping_file "$dirname/output_json_2/mapping.json"
+        set readFlag ""
+    }
     if {![file exists $mapping_file]} {
-        send_operation_update "ERROR: $mapping_file not found. Run optCirc first."
+        send_operation_update "ERROR: $mapping_file not found. Run optCirc (current gridsteer) first, or try --snapped."
         return FAIL
     }
+    send_operation_update "Corner positions from $mapping_file"
 
     if { $from_optcirc } {
-        # Corner positions straight from the optCirc mapping (as goCirc
-        # uses them); four_corners.json is left untouched. With the
-        # lattice flag, detected corners use their fitted-lattice position
-        # instead of their snap.
-        set readFlag ""
-        if { $optcirc_lattice } {
-            set mapping_file "$dirname/output_json_2/mappings_on_lattice.json"
-            set readFlag "--lattice"
-            if {![file exists $mapping_file]} {
-                send_operation_update "ERROR: $mapping_file not found. Re-run the optCirc mapping with the current gridsteer."
-                return FAIL
-            }
-        }
+        # Corner positions straight from the optCirc mapping;
+        # four_corners.json is left untouched
         send_operation_update "Loading corners from $mapping_file (skipping corner visits)"
         set results {}
         for {set i 0} {$i < [llength $corners]} {incr i} {
@@ -257,8 +261,7 @@ proc fourCorners_start { args } {
         send_operation_update "Corner $name: moving to well ($wa,$wb) ..."
 
         # Move to the well using the mapping
-        set pyCmd "$pyExe -m gridsteer.step2.read $dirname $wa $wb"
-        set pyOut [eval exec $pyCmd]
+        set pyOut [exec $pyExe -m gridsteer.step2.read $dirname $wa $wb {*}$readFlag]
         scan $pyOut "%f %f %f %f" well_x well_y well_z well_phi
 
         move sample_x to $well_x
@@ -297,7 +300,7 @@ proc fourCorners_start { args } {
 
         send_operation_update "Corner $name: pixel offset dx=$dx_px dy=$dy_px (detected radius=$det_radius)"
 
-        if { !$dryrun } {
+        if { !$nosnap } {
             # Convert pixel offset to image-fraction units for moveSample
             # Camera frame is 720x480 (standard off-axis resolution)
             set dx_frac [expr {-$dx_px / 720.0}]
@@ -307,10 +310,10 @@ proc fourCorners_start { args } {
             wait_for_operation_to_finish $moveOp
             after 300
         } else {
-            send_operation_update "Corner $name: dry-run, skipping nudge"
+            send_operation_update "Corner $name: --no-snap, skipping nudge"
         }
 
-        # Record the motor position (current if dry-run, post-nudge otherwise)
+        # Record the motor position (current if --no-snap, post-nudge otherwise)
         send_operation_update "Corner $name ($wa,$wb): x=$sample_x y=$sample_y z=$sample_z phi=$gonio_phi"
 
         lappend results [list $name $wa $wb $sample_x $sample_y $sample_z $gonio_phi]
