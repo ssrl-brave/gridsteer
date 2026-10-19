@@ -8,9 +8,16 @@ ap.add_argument("dirname", type=str)
 ap.add_argument("wellid", nargs=2, type=int)
 ap.add_argument("--lattice", action="store_true",
                 help="read mappings_on_lattice.json (all wells on the fitted lattice)")
+ap.add_argument("--from-4corners", action="store_true",
+                help="read mapping_from_4corners.json (interpolated from fourCorners' refined corners)")
 args = ap.parse_args()
 
-json_name = "mappings_on_lattice.json" if args.lattice else "mapping.json"
+if args.from_4corners:
+    json_name = "mapping_from_4corners.json"
+elif args.lattice:
+    json_name = "mappings_on_lattice.json"
+else:
+    json_name = "mapping.json"
 json_f=os.path.join(args.dirname, "output_json_2", json_name)
 a,b = args.wellid
 wellKey = f"({a},{b})"

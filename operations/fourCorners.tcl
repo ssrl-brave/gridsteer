@@ -53,6 +53,19 @@ proc fourCorners_sampleFocus { focus_range focus_iters focus_server } {
 }
 
 
+proc fourCorners_writeMap { dirname } {
+    # Full well map interpolated from the refined corners, for
+    # goCirc --from-4corners
+    global pyExe
+    if {[catch {exec $pyExe -m gridsteer.step2.four_corners_map \
+            "$dirname/output_json_2" 2>@1} res]} {
+        send_operation_update "WARNING: could not write mapping_from_4corners.json: $res"
+    } else {
+        send_operation_update "goCirc --from-4corners map ready: [lindex [split [string trim $res] "\n"] end]"
+    }
+}
+
+
 proc fourCorners_register { results } {
     # Register the refined 4-point grid in DCSS via gridGroupConfig
     # Each result is {name wa wb x y z phi}. add_4PointGrid reads only
@@ -114,6 +127,8 @@ proc fourCorners_start { args } {
         send_operation_update "each, optionally (--snap) refines the center by ring correlation on the"
         send_operation_update "off-axis camera, writes the positions to"
         send_operation_update "<dirname>/output_json_2/four_corners.json and registers the 4-point grid."
+        send_operation_update "Also writes mapping_from_4corners.json (all wells, interpolated per row"
+        send_operation_update "between the refined corners) for goCirc --from-4corners."
         send_operation_update "Requires optCirc to have been run first."
         return OK
     }
@@ -199,6 +214,7 @@ proc fourCorners_start { args } {
             return FAIL
         }
         send_operation_update "Loading corners from $outfile (skipping corner visits)"
+        fourCorners_writeMap $dirname
         set results {}
         foreach line [split [exec $pyExe -m gridsteer.step2.read_four_corners $outfile] "\n"] {
             if { [string trim $line] eq "" } continue
@@ -334,6 +350,7 @@ proc fourCorners_start { args } {
     eval exec $pyCmd
 
     send_operation_update "four_corners.json ready at $outfile"
+    fourCorners_writeMap $dirname
 
     return [fourCorners_register $results]
 }

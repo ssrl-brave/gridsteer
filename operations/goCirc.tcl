@@ -24,17 +24,41 @@ proc goCirc_initialize { } {
 proc goCirc_start { args } {
     # --- Help ---
     if { [llength $args] > 0 && ([lindex $args 0] eq "-h" || [lindex $args 0] eq "--help") } {
-        send_operation_update "Usage: goCirc ?dirname? <well_a> <well_b>"
+        send_operation_update "Usage: goCirc ?dirname? <well_a> <well_b> ?--from-4corners? ?--lattice?"
         send_operation_update "  dirname      — scan directory (must contain output_json_2/mapping.json);"
         send_operation_update "                 default: this beamline's latest optCirc run"
         send_operation_update "                 (/data/blctl/gridsteer_operation_data/optCirc.<beamline>.latest)"
         send_operation_update "  well_a       — well row index (integer)"
         send_operation_update "  well_b       — well column index (integer)"
+        send_operation_update "  --from-4corners — use mapping_from_4corners.json (interpolated from"
+        send_operation_update "                    fourCorners' refined, focused corners)"
+        send_operation_update "  --lattice       — use mappings_on_lattice.json (optCirc fitted lattice)"
+        send_operation_update "                    default: mapping.json"
         send_operation_update ""
         send_operation_update "Moves motors to center the specified well using the mapping"
         send_operation_update "produced by optCirc."
         return OK
     }
+
+    # --- Map source flags (anywhere in args) ---
+    set readFlag ""
+    set mapName mapping.json
+    set pos {}
+    foreach a $args {
+        if { $a eq "--from-4corners" } {
+            set readFlag "--from-4corners"
+            set mapName mapping_from_4corners.json
+        } elseif { $a eq "--lattice" } {
+            set readFlag "--lattice"
+            set mapName mappings_on_lattice.json
+        } elseif { [string match --* $a] } {
+            send_operation_update "ERROR: unknown option $a. Run goCirc --help for usage."
+            return FAIL
+        } else {
+            lappend pos $a
+        }
+    }
+    set args $pos
 
     # --- Parse positional args with defaults ---
     # Two args (well_a well_b) or dirname "latest": use the latest optCirc run
@@ -72,7 +96,12 @@ proc goCirc_start { args } {
     set start_G $gonio_phi
 
 	send_operation_update "Moving  to well ($well_a,$well_b) ... "
-    set pyCmd "$pyExe -m gridsteer.step2.read $dirname $well_a $well_b"
+    if {![file exists "$dirname/output_json_2/$mapName"]} {
+        send_operation_update "ERROR: $dirname/output_json_2/$mapName not found"
+        return FAIL
+    }
+    send_operation_update "Map: $mapName"
+    set pyCmd "$pyExe -m gridsteer.step2.read $dirname $well_a $well_b $readFlag"
     send_operation_update "PyCMD: $pyCmd"
     set pyOut [eval exec $pyCmd]
     set count [scan $pyOut "%f %f %f %f" well_x well_y well_z well_phi]
