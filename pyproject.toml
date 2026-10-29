@@ -23,10 +23,16 @@ dependencies = [
 [project.optional-dependencies]
 rembg-cpu = ["rembg[cpu]"]
 rembg-gpu = ["rembg[gpu]"]
+test = ["pytest>=8"]
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["gridsteer*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["validation: slow end-to-end run on a dataset under data/"]
+addopts = "-ra"
 
 #[project.scripts]
 #"datsimx.sim" = "datsimx.mx_simulate:main"
