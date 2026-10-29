@@ -1,0 +1,8 @@
+{
+ "dataset": "phi.5",
+ "data_dir": "data/Step1TestData/phi.5",
+ "step": 1,
+ "n_frames": 11,
+ "returncode": 0,
+ "phi": 104.348
+}

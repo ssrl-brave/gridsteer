@@ -1,0 +1,229 @@
+{
+ "_doc": [
+  "Manifest of the datasets the validation tests run on, one list per pipeline step.",
+  "Fields of an entry:",
+  "  name         dataset id; its reference file is tests/ground_truth/step<N>/<name>.json.",
+  "               An entry with no reference file is skipped by the tests.",
+  "  data_dir     directory of the scan's .npz frames, relative to the repository root.",
+  "  orientation  (step2 only) the --orientation Step 2 is run with: bottom-right (default) or upper-right.",
+  "  n_frames     frame count; only used to balance the CI shards (counted from data_dir if missing).",
+  "  notes        free text for humans; never read by the code.",
+  "  tolerances   optional per-dataset overrides of tests/validation/metrics.DEFAULT_TOLERANCES,",
+  "               e.g. {\"phi_deg\": 3.0}; unknown keys are an error.",
+  "To add a dataset: add its entry here, then generate and commit its reference with",
+  "  python -m tests.validation.make_ground_truth --only <name>"
+ ],
+ "step1": [
+  {
+   "name": "phi.5",
+   "data_dir": "data/Step1TestData/phi.5",
+   "n_frames": 11,
+   "notes": ""
+  }
+ ],
+ "step2": [
+  {
+   "name": "2026Jun9.trial1",
+   "data_dir": "data/Step2TestData/2026Jun9.trial1",
+   "orientation": "bottom-right",
+   "n_frames": 36,
+   "notes": ""
+  },
+  {
+   "name": "2026Jun9.trial2",
+   "data_dir": "data/Step2TestData/2026Jun9.trial2",
+   "orientation": "bottom-right",
+   "n_frames": 8,
+   "notes": ""
+  },
+  {
+   "name": "2026Jun9.trial3",
+   "data_dir": "data/Step2TestData/2026Jun9.trial3",
+   "orientation": "bottom-right",
+   "n_frames": 8,
+   "notes": ""
+  },
+  {
+   "name": "March8th_opt.1",
+   "data_dir": "data/Step2TestData/March8th_opt.1",
+   "orientation": "bottom-right",
+   "n_frames": 24,
+   "notes": ""
+  },
+  {
+   "name": "March8th_opt.10",
+   "data_dir": "data/Step2TestData/March8th_opt.10",
+   "orientation": "bottom-right",
+   "n_frames": 30,
+   "notes": ""
+  },
+  {
+   "name": "March8th_opt.11",
+   "data_dir": "data/Step2TestData/March8th_opt.11",
+   "orientation": "bottom-right",
+   "n_frames": 30,
+   "notes": ""
+  },
+  {
+   "name": "March8th_opt.12",
+   "data_dir": "data/Step2TestData/March8th_opt.12",
+   "orientation": "bottom-right",
+   "n_frames": 30,
+   "notes": ""
+  },
+  {
+   "name": "March8th_opt.13",
+   "data_dir": "data/Step2TestData/March8th_opt.13",
+   "orientation": "bottom-right",
+   "n_frames": 30,
+   "notes": ""
+  },
+  {
+   "name": "March8th_opt.2",
+   "data_dir": "data/Step2TestData/March8th_opt.2",
+   "orientation": "bottom-right",
+   "n_frames": 30,
+   "notes": ""
+  },
+  {
+   "name": "March8th_opt.3",
+   "data_dir": "data/Step2TestData/March8th_opt.3",
+   "orientation": "bottom-right",
+   "n_frames": 24,
+   "notes": ""
+  },
+  {
+   "name": "March8th_opt.4",
+   "data_dir": "data/Step2TestData/March8th_opt.4",
+   "orientation": "bottom-right",
+   "n_frames": 24,
+   "notes": ""
+  },
+  {
+   "name": "March8th_opt.5",
+   "data_dir": "data/Step2TestData/March8th_opt.5",
+   "orientation": "bottom-right",
+   "n_frames": 35,
+   "notes": ""
+  },
+  {
+   "name": "March8th_opt.6",
+   "data_dir": "data/Step2TestData/March8th_opt.6",
+   "orientation": "bottom-right",
+   "n_frames": 21,
+   "notes": ""
+  },
+  {
+   "name": "March8th_opt.7",
+   "data_dir": "data/Step2TestData/March8th_opt.7",
+   "orientation": "bottom-right",
+   "n_frames": 33,
+   "notes": ""
+  },
+  {
+   "name": "March8th_opt.8",
+   "data_dir": "data/Step2TestData/March8th_opt.8",
+   "orientation": "bottom-right",
+   "n_frames": 22,
+   "notes": ""
+  },
+  {
+   "name": "March8th_opt.9",
+   "data_dir": "data/Step2TestData/March8th_opt.9",
+   "orientation": "bottom-right",
+   "n_frames": 14,
+   "notes": ""
+  },
+  {
+   "name": "feb5.scan1",
+   "data_dir": "data/Step2TestData/feb5.scan1",
+   "orientation": "upper-right",
+   "n_frames": 24,
+   "notes": ""
+  },
+  {
+   "name": "grid.100.1",
+   "data_dir": "data/Step2TestData/grid.100.1",
+   "orientation": "bottom-right",
+   "n_frames": 32,
+   "notes": ""
+  },
+  {
+   "name": "grid.100.2",
+   "data_dir": "data/Step2TestData/grid.100.2",
+   "orientation": "bottom-right",
+   "n_frames": 71,
+   "notes": ""
+  },
+  {
+   "name": "gridscanJun4.3",
+   "data_dir": "data/Step2TestData/gridscanJun4.3",
+   "orientation": "upper-right",
+   "n_frames": 25,
+   "notes": ""
+  },
+  {
+   "name": "mapper15",
+   "data_dir": "data/Step2TestData/mapper15",
+   "orientation": "upper-right",
+   "n_frames": 24,
+   "notes": ""
+  },
+  {
+   "name": "optCirc.out1",
+   "data_dir": "data/Step2TestData/optCirc.out1",
+   "orientation": "bottom-right",
+   "n_frames": 36,
+   "notes": ""
+  },
+  {
+   "name": "optCirc.out2",
+   "data_dir": "data/Step2TestData/optCirc.out2",
+   "orientation": "bottom-right",
+   "n_frames": 72,
+   "notes": ""
+  },
+  {
+   "name": "optCirc.out3",
+   "data_dir": "data/Step2TestData/optCirc.out3",
+   "orientation": "bottom-right",
+   "n_frames": 144,
+   "notes": ""
+  },
+  {
+   "name": "optCirc.out4",
+   "data_dir": "data/Step2TestData/optCirc.out4",
+   "orientation": "bottom-right",
+   "n_frames": 144,
+   "notes": ""
+  },
+  {
+   "name": "optCirc.out5",
+   "data_dir": "data/Step2TestData/optCirc.out5",
+   "orientation": "bottom-right",
+   "n_frames": 72,
+   "notes": ""
+  },
+  {
+   "name": "optCirc.test.1",
+   "data_dir": "data/Step2TestData/optCirc.test.1",
+   "orientation": "bottom-right",
+   "n_frames": 100,
+   "notes": ""
+  },
+  {
+   "name": "scan.31",
+   "data_dir": "data/Step2TestData/scan.31",
+   "orientation": "bottom-right",
+   "n_frames": 5,
+   "notes": ""
+  },
+  {
+   "name": "scanL1.6",
+   "data_dir": "data/Step2TestData/scanL1.6",
+   "orientation": "bottom-right",
+   "n_frames": 6,
+   "notes": ""
+  }
+ ]
+}

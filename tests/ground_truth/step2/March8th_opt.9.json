@@ -1,0 +1,380 @@
+{
+ "dataset": "March8th_opt.9",
+ "data_dir": "data/Step2TestData/March8th_opt.9",
+ "step": 2,
+ "orientation": "bottom-right",
+ "n_frames": 14,
+ "returncode": 0,
+ "frame_shape": [
+  480,
+  720
+ ],
+ "registration": {
+  "calibrated": true,
+  "residual_px": 0.67,
+  "n_bridged": 0,
+  "n_rejected": 0,
+  "stage_gain": 236.99
+ },
+ "layout": {
+  "scale": 1.221,
+  "rotation_deg": -5.0,
+  "orientation": "prior",
+  "well_radius_px": 118.0,
+  "expected_scale": 1.166,
+  "spacing_rejected": [],
+  "n_observed": 4
+ },
+ "motor_map": {
+  "n_pairs": 91,
+  "r2": {
+   "x": 0.9999,
+   "y": 0.9999,
+   "z": 1.0
+  }
+ },
+ "wells": {
+  "R1C1": {
+   "observed": true,
+   "score": 53.91,
+   "mosaic_px": [
+    352.0,
+    564.0
+   ],
+   "r": 117.8,
+   "ref_px": [
+    192.93,
+    518.24
+   ],
+   "motor": [
+    1.0453,
+    -1.13567,
+    -2.1205
+   ]
+  },
+  "R1C2": {
+   "observed": true,
+   "score": 22.96,
+   "mosaic_px": [
+    74.0,
+    582.0
+   ],
+   "r": 117.8,
+   "ref_px": [
+    -85.07,
+    536.24
+   ],
+   "motor": [
+    1.00852,
+    -1.19932,
+    -0.97738
+   ]
+  },
+  "R1C3": {
+   "observed": false,
+   "score": null,
+   "mosaic_px": [
+    -270.7,
+    618.1
+   ],
+   "r": 117.8,
+   "ref_px": [
+    -429.8,
+    572.29
+   ],
+   "motor": [
+    0.93375,
+    -1.32866,
+    0.44063
+   ]
+  },
+  "R1C4": {
+   "observed": false,
+   "score": null,
+   "mosaic_px": [
+    -580.5,
+    645.0
+   ],
+   "r": 117.8,
+   "ref_px": [
+    -739.55,
+    599.25
+   ],
+   "motor": [
+    0.8781,
+    -1.42493,
+    1.71459
+   ]
+  },
+  "R1C5": {
+   "observed": false,
+   "score": null,
+   "mosaic_px": [
+    -890.2,
+    672.0
+   ],
+   "r": 117.8,
+   "ref_px": [
+    -1049.32,
+    626.22
+   ],
+   "motor": [
+    0.82245,
+    -1.52121,
+    2.9886
+   ]
+  },
+  "R1C6": {
+   "observed": false,
+   "score": null,
+   "mosaic_px": [
+    -1200.0,
+    698.9
+   ],
+   "r": 117.8,
+   "ref_px": [
+    -1359.09,
+    653.18
+   ],
+   "motor": [
+    0.7668,
+    -1.61749,
+    4.2626
+   ]
+  },
+  "R1C7": {
+   "observed": false,
+   "score": null,
+   "mosaic_px": [
+    -1509.8,
+    725.9
+   ],
+   "r": 117.8,
+   "ref_px": [
+    -1668.84,
+    680.15
+   ],
+   "motor": [
+    0.71115,
+    -1.71377,
+    5.53656
+   ]
+  },
+  "R1C8": {
+   "observed": false,
+   "score": null,
+   "mosaic_px": [
+    -1819.5,
+    752.9
+   ],
+   "r": 117.8,
+   "ref_px": [
+    -1978.61,
+    707.11
+   ],
+   "motor": [
+    0.65549,
+    -1.81004,
+    6.81057
+   ]
+  },
+  "R1C9": {
+   "observed": false,
+   "score": null,
+   "mosaic_px": [
+    -2129.3,
+    779.8
+   ],
+   "r": 117.8,
+   "ref_px": [
+    -2288.38,
+    734.07
+   ],
+   "motor": [
+    0.59984,
+    -1.90632,
+    8.08458
+   ]
+  },
+  "R2C1": {
+   "observed": true,
+   "score": 7.82,
+   "mosaic_px": [
+    477.0,
+    264.0
+   ],
+   "r": 117.8,
+   "ref_px": [
+    317.93,
+    218.24
+   ],
+   "motor": [
+    1.68143,
+    -0.03517,
+    -2.64548
+   ]
+  },
+  "R2C2": {
+   "observed": true,
+   "score": 53.95,
+   "mosaic_px": [
+    167.0,
+    285.0
+   ],
+   "r": 117.8,
+   "ref_px": [
+    7.93,
+    239.24
+   ],
+   "motor": [
+    1.63844,
+    -0.10955,
+    -1.37074
+   ]
+  },
+  "R2C3": {
+   "observed": false,
+   "score": null,
+   "mosaic_px": [
+    -141.1,
+    314.9
+   ],
+   "r": 117.8,
+   "ref_px": [
+    -300.13,
+    269.12
+   ],
+   "motor": [
+    1.57658,
+    -0.21656,
+    -0.10366
+   ]
+  },
+  "R2C4": {
+   "observed": false,
+   "score": null,
+   "mosaic_px": [
+    -450.8,
+    341.8
+   ],
+   "r": 117.8,
+   "ref_px": [
+    -609.88,
+    296.08
+   ],
+   "motor": [
+    1.52093,
+    -0.31284,
+    1.1703
+   ]
+  },
+  "R2C5": {
+   "observed": false,
+   "score": null,
+   "mosaic_px": [
+    -760.6,
+    368.8
+   ],
+   "r": 117.8,
+   "ref_px": [
+    -919.65,
+    323.05
+   ],
+   "motor": [
+    1.46528,
+    -0.40912,
+    2.44431
+   ]
+  },
+  "R2C6": {
+   "observed": false,
+   "score": null,
+   "mosaic_px": [
+    -1070.3,
+    395.8
+   ],
+   "r": 117.8,
+   "ref_px": [
+    -1229.42,
+    350.01
+   ],
+   "motor": [
+    1.40963,
+    -0.5054,
+    3.71832
+   ]
+  },
+  "R2C7": {
+   "observed": false,
+   "score": null,
+   "mosaic_px": [
+    -1380.1,
+    422.7
+   ],
+   "r": 117.8,
+   "ref_px": [
+    -1539.19,
+    376.98
+   ],
+   "motor": [
+    1.35397,
+    -0.60167,
+    4.99233
+   ]
+  },
+  "R2C8": {
+   "observed": false,
+   "score": null,
+   "mosaic_px": [
+    -1689.9,
+    449.7
+   ],
+   "r": 117.8,
+   "ref_px": [
+    -1848.94,
+    403.94
+   ],
+   "motor": [
+    1.29832,
+    -0.69795,
+    6.26629
+   ]
+  },
+  "R2C9": {
+   "observed": false,
+   "score": null,
+   "mosaic_px": [
+    -1999.6,
+    476.7
+   ],
+   "r": 117.8,
+   "ref_px": [
+    -2158.71,
+    430.91
+   ],
+   "motor": [
+    1.24267,
+    -0.79423,
+    7.5403
+   ]
+  },
+  "R2C10": {
+   "observed": false,
+   "score": null,
+   "mosaic_px": [
+    -2309.4,
+    503.6
+   ],
+   "r": 117.8,
+   "ref_px": [
+    -2468.48,
+    457.87
+   ],
+   "motor": [
+    1.18702,
+    -0.89051,
+    8.81431
+   ]
+  }
+ }
+}

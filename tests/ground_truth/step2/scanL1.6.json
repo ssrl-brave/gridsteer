@@ -1,0 +1,14 @@
+{
+ "dataset": "scanL1.6",
+ "data_dir": "data/Step2TestData/scanL1.6",
+ "step": 2,
+ "orientation": "bottom-right",
+ "n_frames": 6,
+ "returncode": 1,
+ "frame_shape": null,
+ "registration": null,
+ "layout": null,
+ "motor_map": null,
+ "wells": null,
+ "failure_tail": "No Wells Detected\n"
+}

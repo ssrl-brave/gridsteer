@@ -1,0 +1,501 @@
+{
+  "frame_center": [
+    360.0,
+    240.0
+  ],
+  "reference_frame_number": 0,
+  "reference_motor_position": {
+    "x": -0.267,
+    "y": 0.9615,
+    "z": -2.79862,
+    "phi": 219.89
+  },
+  "calibration": {
+    "method": "linear ridge regression (alpha=1.0)",
+    "mapping_direction": "pixel shift (dx,dy) -> motor shift (dx,dy,dz)",
+    "n_training_pairs": 2556,
+    "r2_scores": {
+      "x": 1.0,
+      "y": 1.0,
+      "z": 1.0
+    }
+  },
+  "well_centering_positions": {
+    "(1,1)": {
+      "label": "R1C1",
+      "row": 1,
+      "column": 1,
+      "predicted": false,
+      "pixel_position_in_reference_frame": {
+        "x": 9.1,
+        "y": 597.55
+      },
+      "pixel_offset_to_center": {
+        "dx": 350.9,
+        "dy": -357.55
+      },
+      "predicted_motor_shift": {
+        "dx": 0.930120900968294,
+        "dy": -1.1110782746975347,
+        "dz": 1.4613857891908433
+      },
+      "motor_position": {
+        "x": 0.663120900968294,
+        "y": -0.1495782746975347,
+        "z": -1.3372342108091568,
+        "phi": 219.89
+      }
+    },
+    "(1,2)": {
+      "label": "R1C2",
+      "row": 1,
+      "column": 2,
+      "predicted": false,
+      "pixel_position_in_reference_frame": {
+        "x": -312.9,
+        "y": 598.55
+      },
+      "pixel_offset_to_center": {
+        "dx": 672.9,
+        "dy": -358.55
+      },
+      "predicted_motor_shift": {
+        "dx": 0.9228091720511264,
+        "dy": -1.1023440304268326,
+        "dz": 2.785421213316204
+      },
+      "motor_position": {
+        "x": 0.6558091720511264,
+        "y": -0.14084403042683258,
+        "z": -0.013198786683795927,
+        "phi": 219.89
+      }
+    },
+    "(1,3)": {
+      "label": "R1C3",
+      "row": 1,
+      "column": 3,
+      "predicted": false,
+      "pixel_position_in_reference_frame": {
+        "x": -634.9,
+        "y": 606.55
+      },
+      "pixel_offset_to_center": {
+        "dx": 994.9,
+        "dy": -366.55
+      },
+      "predicted_motor_shift": {
+        "dx": 0.9339189784589587,
+        "dy": -1.1156152777700408,
+        "dz": 4.109820228759367
+      },
+      "motor_position": {
+        "x": 0.6669189784589586,
+        "y": -0.15411527777004075,
+        "z": 1.311200228759367,
+        "phi": 219.89
+      }
+    },
+    "(1,4)": {
+      "label": "R1C4",
+      "row": 1,
+      "column": 4,
+      "predicted": true,
+      "pixel_position_in_reference_frame": {
+        "x": -957.26,
+        "y": 609.78
+      },
+      "pixel_offset_to_center": {
+        "dx": 1317.26,
+        "dy": -369.78
+      },
+      "predicted_motor_shift": {
+        "dx": 0.9324656127764934,
+        "dy": -1.1138791561182244,
+        "dz": 5.435461164556341
+      },
+      "motor_position": {
+        "x": 0.6654656127764934,
+        "y": -0.1523791561182244,
+        "z": 2.636841164556341,
+        "phi": 219.89
+      }
+    },
+    "(1,5)": {
+      "label": "R1C5",
+      "row": 1,
+      "column": 5,
+      "predicted": true,
+      "pixel_position_in_reference_frame": {
+        "x": -1279.39,
+        "y": 612.26
+      },
+      "pixel_offset_to_center": {
+        "dx": 1639.39,
+        "dy": -372.26
+      },
+      "predicted_motor_shift": {
+        "dx": 0.9290244347750264,
+        "dy": -1.1097684882332037,
+        "dz": 6.760119392053306
+      },
+      "motor_position": {
+        "x": 0.6620244347750264,
+        "y": -0.1482684882332037,
+        "z": 3.9614993920533057,
+        "phi": 219.89
+      }
+    },
+    "(1,6)": {
+      "label": "R1C6",
+      "row": 1,
+      "column": 6,
+      "predicted": true,
+      "pixel_position_in_reference_frame": {
+        "x": -1601.52,
+        "y": 614.73
+      },
+      "pixel_offset_to_center": {
+        "dx": 1961.52,
+        "dy": -374.73
+      },
+      "predicted_motor_shift": {
+        "dx": 0.9255832567735591,
+        "dy": -1.1056578203481824,
+        "dz": 8.08477761955027
+      },
+      "motor_position": {
+        "x": 0.6585832567735591,
+        "y": -0.14415782034818236,
+        "z": 5.28615761955027,
+        "phi": 219.89
+      }
+    },
+    "(1,7)": {
+      "label": "R1C7",
+      "row": 1,
+      "column": 7,
+      "predicted": true,
+      "pixel_position_in_reference_frame": {
+        "x": -1923.64,
+        "y": 617.2
+      },
+      "pixel_offset_to_center": {
+        "dx": 2283.64,
+        "dy": -377.2
+      },
+      "predicted_motor_shift": {
+        "dx": 0.9221422138898083,
+        "dy": -1.1015473138683713,
+        "dz": 9.409383834394987
+      },
+      "motor_position": {
+        "x": 0.6551422138898083,
+        "y": -0.14004731386837133,
+        "z": 6.610763834394987,
+        "phi": 219.89
+      }
+    },
+    "(1,8)": {
+      "label": "R1C8",
+      "row": 1,
+      "column": 8,
+      "predicted": true,
+      "pixel_position_in_reference_frame": {
+        "x": -2245.78,
+        "y": 619.67
+      },
+      "pixel_offset_to_center": {
+        "dx": 2605.78,
+        "dy": -379.67
+      },
+      "predicted_motor_shift": {
+        "dx": 0.918701035888341,
+        "dy": -1.09743664598335,
+        "dz": 10.734042061891948
+      },
+      "motor_position": {
+        "x": 0.6517010358883409,
+        "y": -0.13593664598334998,
+        "z": 7.935422061891948,
+        "phi": 219.89
+      }
+    },
+    "(1,9)": {
+      "label": "R1C9",
+      "row": 1,
+      "column": 9,
+      "predicted": true,
+      "pixel_position_in_reference_frame": {
+        "x": -2567.91,
+        "y": 622.15
+      },
+      "pixel_offset_to_center": {
+        "dx": 2927.91,
+        "dy": -382.15
+      },
+      "predicted_motor_shift": {
+        "dx": 0.9152598578868737,
+        "dy": -1.0933259780983289,
+        "dz": 12.058700289388913
+      },
+      "motor_position": {
+        "x": 0.6482598578868737,
+        "y": -0.13182597809832886,
+        "z": 9.260080289388913,
+        "phi": 219.89
+      }
+    },
+    "(2,1)": {
+      "label": "R2C1",
+      "row": 2,
+      "column": 1,
+      "predicted": false,
+      "pixel_position_in_reference_frame": {
+        "x": 170.1,
+        "y": 304.55
+      },
+      "pixel_offset_to_center": {
+        "dx": 189.9,
+        "dy": -64.55
+      },
+      "predicted_motor_shift": {
+        "dx": 0.16401975363224514,
+        "dy": -0.19593021153735124,
+        "dz": 0.7841751542056734
+      },
+      "motor_position": {
+        "x": -0.10298024636775488,
+        "y": 0.7655697884626488,
+        "z": -2.0144448457943267,
+        "phi": 219.89
+      }
+    },
+    "(2,2)": {
+      "label": "R2C2",
+      "row": 2,
+      "column": 2,
+      "predicted": false,
+      "pixel_position_in_reference_frame": {
+        "x": -150.9,
+        "y": 308.55
+      },
+      "pixel_offset_to_center": {
+        "dx": 510.9,
+        "dy": -68.55
+      },
+      "predicted_motor_shift": {
+        "dx": 0.16463384847803006,
+        "dy": -0.19666378008854188,
+        "dz": 2.1042546532358424
+      },
+      "motor_position": {
+        "x": -0.10236615152196996,
+        "y": 0.7648362199114581,
+        "z": -0.6943653467641577,
+        "phi": 219.89
+      }
+    },
+    "(2,3)": {
+      "label": "R2C3",
+      "row": 2,
+      "column": 3,
+      "predicted": false,
+      "pixel_position_in_reference_frame": {
+        "x": -478.9,
+        "y": 300.55
+      },
+      "pixel_offset_to_center": {
+        "dx": 838.9,
+        "dy": -60.55
+      },
+      "predicted_motor_shift": {
+        "dx": 0.13345200811529004,
+        "dy": -0.15941543381865406,
+        "dz": 3.452493102483813
+      },
+      "motor_position": {
+        "x": -0.13354799188470998,
+        "y": 0.8020845661813459,
+        "z": 0.6538731024838129,
+        "phi": 219.89
+      }
+    },
+    "(2,4)": {
+      "label": "R2C4",
+      "row": 2,
+      "column": 4,
+      "predicted": true,
+      "pixel_position_in_reference_frame": {
+        "x": -798.5,
+        "y": 307.3
+      },
+      "pixel_offset_to_center": {
+        "dx": 1158.5,
+        "dy": -67.3
+      },
+      "predicted_motor_shift": {
+        "dx": 0.1413305060372019,
+        "dy": -0.168826713437436,
+        "dz": 4.766991233978186
+      },
+      "motor_position": {
+        "x": -0.1256694939627981,
+        "y": 0.7926732865625641,
+        "z": 1.968371233978186,
+        "phi": 219.89
+      }
+    },
+    "(2,5)": {
+      "label": "R2C5",
+      "row": 2,
+      "column": 5,
+      "predicted": true,
+      "pixel_position_in_reference_frame": {
+        "x": -1120.64,
+        "y": 309.77
+      },
+      "pixel_offset_to_center": {
+        "dx": 1480.64,
+        "dy": -69.77
+      },
+      "predicted_motor_shift": {
+        "dx": 0.1378893280357346,
+        "dy": -0.16471604555241484,
+        "dz": 6.09164946147515
+      },
+      "motor_position": {
+        "x": -0.12911067196426543,
+        "y": 0.7967839544475852,
+        "z": 3.29302946147515,
+        "phi": 219.89
+      }
+    },
+    "(2,6)": {
+      "label": "R2C6",
+      "row": 2,
+      "column": 6,
+      "predicted": true,
+      "pixel_position_in_reference_frame": {
+        "x": -1442.77,
+        "y": 312.24
+      },
+      "pixel_offset_to_center": {
+        "dx": 1802.77,
+        "dy": -72.24
+      },
+      "predicted_motor_shift": {
+        "dx": 0.1344481500342673,
+        "dy": -0.1606053776673937,
+        "dz": 7.416307688972114
+      },
+      "motor_position": {
+        "x": -0.13255184996573272,
+        "y": 0.8008946223326063,
+        "z": 4.617687688972113,
+        "phi": 219.89
+      }
+    },
+    "(2,7)": {
+      "label": "R2C7",
+      "row": 2,
+      "column": 7,
+      "predicted": true,
+      "pixel_position_in_reference_frame": {
+        "x": -1764.9,
+        "y": 314.72
+      },
+      "pixel_offset_to_center": {
+        "dx": 2124.9,
+        "dy": -74.72
+      },
+      "predicted_motor_shift": {
+        "dx": 0.1310069720328,
+        "dy": -0.1564947097823725,
+        "dz": 8.74096591646908
+      },
+      "motor_position": {
+        "x": -0.1359930279672,
+        "y": 0.8050052902176275,
+        "z": 5.94234591646908,
+        "phi": 219.89
+      }
+    },
+    "(2,8)": {
+      "label": "R2C8",
+      "row": 2,
+      "column": 8,
+      "predicted": true,
+      "pixel_position_in_reference_frame": {
+        "x": -2087.02,
+        "y": 317.19
+      },
+      "pixel_offset_to_center": {
+        "dx": 2447.02,
+        "dy": -77.19
+      },
+      "predicted_motor_shift": {
+        "dx": 0.12756592914904916,
+        "dy": -0.15238420330256128,
+        "dz": 10.065572131313793
+      },
+      "motor_position": {
+        "x": -0.13943407085095086,
+        "y": 0.8091157966974387,
+        "z": 7.2669521313137935,
+        "phi": 219.89
+      }
+    },
+    "(2,9)": {
+      "label": "R2C9",
+      "row": 2,
+      "column": 9,
+      "predicted": true,
+      "pixel_position_in_reference_frame": {
+        "x": -2409.16,
+        "y": 319.66
+      },
+      "pixel_offset_to_center": {
+        "dx": 2769.16,
+        "dy": -79.66
+      },
+      "predicted_motor_shift": {
+        "dx": 0.12412475114758201,
+        "dy": -0.14827353541754026,
+        "dz": 11.390230358810758
+      },
+      "motor_position": {
+        "x": -0.142875248852418,
+        "y": 0.8132264645824597,
+        "z": 8.591610358810758,
+        "phi": 219.89
+      }
+    },
+    "(2,10)": {
+      "label": "R2C10",
+      "row": 2,
+      "column": 10,
+      "predicted": true,
+      "pixel_position_in_reference_frame": {
+        "x": -2731.29,
+        "y": 322.13
+      },
+      "pixel_offset_to_center": {
+        "dx": 3091.29,
+        "dy": -82.13
+      },
+      "predicted_motor_shift": {
+        "dx": 0.12068357314611487,
+        "dy": -0.1441628675325193,
+        "dz": 12.714888586307723
+      },
+      "motor_position": {
+        "x": -0.14631642685388513,
+        "y": 0.8173371324674807,
+        "z": 9.916268586307723,
+        "phi": 219.89
+      }
+    }
+  },
+  "well_radius_px": 121.1
+}

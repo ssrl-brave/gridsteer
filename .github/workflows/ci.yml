@@ -1,0 +1,126 @@
+# GridSteer continuous integration.
+#
+# Three stages:
+#   unit        fast tests of the comparison metrics and the results table
+#   validate    Step 1 and Step 2 run on every dataset under data/ and
+#               compared with tests/ground_truth, split into shards that
+#               each run a balanced subset of the datasets; every run's
+#               outputs (debug frames, mosaics, JSON, logs) are uploaded
+#               as a build artifact per shard
+#   results     merges the shards' CSVs into one validation-results.csv
+#               (uploaded as a build artifact and shown on the job page) and
+#               is the single status to point branch protection at
+#
+# See tests/README.md for the checks and tolerances, and for how to
+# regenerate the references after an intentional behaviour change.
+
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+  # Headless matplotlib / OpenCV
+  MPLBACKEND: Agg
+  QT_QPA_PLATFORM: offscreen
+
+jobs:
+  unit:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Only the metrics are tested here; the frame data is not needed.
+          sparse-checkout: |
+            gridsteer
+            tests
+            pyproject.toml
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+      - name: Install
+        run: |
+          uv venv --python ${{ env.PYTHON_VERSION }} .venv
+          uv pip install --python .venv/bin/python -e ".[test]"
+      - name: Run Unit Tests
+        run: .venv/bin/python -m pytest -m "not validation" -q
+
+  validate:
+    name: Validate Datasets (Shard ${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    needs: unit
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+      - name: Install
+        run: |
+          uv venv --python ${{ env.PYTHON_VERSION }} .venv
+          uv pip install --python .venv/bin/python -e ".[test]"
+      - name: Run Step 1 and Step 2 on This Shard's Datasets
+        run: |
+          .venv/bin/python -m pytest -m validation -q -s \
+            --shard ${{ matrix.shard }}/4 --results-csv results.csv \
+            --outputs-dir outputs
+      - name: Upload This Shard's Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: results-shard-${{ matrix.shard }}
+          path: results.csv
+          if-no-files-found: ignore
+      - name: Upload This Shard's Pipeline Outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-outputs-shard-${{ matrix.shard }}
+          path: outputs
+          if-no-files-found: ignore
+
+  results:
+    name: Validation Results
+    runs-on: ubuntu-latest
+    needs: [unit, validate]
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: tests
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: results-shard-*
+          path: shards
+      - name: Merge the Shards into One CSV
+        run: |
+          python3 -m tests.validation.results merge "shards/*/results.csv" \
+            -o validation-results.csv --markdown "$GITHUB_STEP_SUMMARY"
+      - name: Upload validation-results.csv
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-results
+          path: validation-results.csv
+      # Single required status for branch protection: green only when the
+      # unit tests and every validation shard passed.
+      - name: Check Upstream Results
+        run: |
+          echo "unit=${{ needs.unit.result }} validate=${{ needs.validate.result }}"
+          test "${{ needs.unit.result }}" = "success"
+          test "${{ needs.validate.result }}" = "success"
